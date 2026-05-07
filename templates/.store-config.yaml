@@ -1,0 +1,45 @@
+# ─── App Store Project Config ────────────────────────────────────────────────
+# Copy this file to marketing/.store-config.yaml in your project root.
+# Edit once per project. Committed to git. Not release-specific.
+# Used by /store-spec and /store-assets skills.
+
+app:
+  name: "My App"                   # Display name shown on screenshots and CTA
+  bundle_id: "com.example.myapp"   # com.company.appname
+  category: Finance                # App Store / Google Play category
+  icon: assets/icon.png            # Path to app icon, relative to project root
+  platforms: [android, ios]        # Platforms to generate assets for
+
+brand:
+  primary_color: "#FFFFFF"         # Main brand accent color (used in UI overlays)
+  secondary_color: "#000000"       # Secondary color (used for contrast elements)
+  background_gradient_from: "#000000"  # Imagen background gradient start color
+  background_gradient_to: "#FFFFFF"    # Imagen background gradient end color
+  theme_motif: >-                  # Shared visual theme injected into all Imagen prompts.
+    Describe the visual style in plain English — colors, shapes, mood.
+    No hex codes. Example: "Soft teal gradient, subtle geometric shapes,
+    clean minimalist professional aesthetic, no text, no people, no UI elements"
+
+# ── Image generation models ───────────────────────────────────────────────────
+# Set whichever provider you use. The first key found in marketing/.env.local is used.
+
+imagen:
+  model: imagen-4.0-fast-generate-001
+  # Options: imagen-4.0-fast-generate-001 (faster) | imagen-4.0-generate-001 (higher quality)
+  # Requires: GOOGLE_AI_API_KEY in marketing/.env.local
+  # Quota: ~70 images/day on standard Gemini API plans
+
+openai:
+  model: gpt-image-1
+  quality: medium
+  # Options: low | medium | high | auto
+  # Requires: OPENAI_API_KEY in marketing/.env.local
+  # Billing: usage-based, no hard daily quota
+
+# ── Screenshot requirements ───────────────────────────────────────────────────
+screenshots:
+  # Minimum required by stores
+  android_phone_min: 2
+  android_tablet_min: 2
+  ios_phone_required_size: "6.9inch"   # 1320×2868
+  ios_ipad_required_size: "12.9inch"   # 2048×2732

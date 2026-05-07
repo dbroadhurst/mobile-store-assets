@@ -1,0 +1,10 @@
+{
+  "name": "mobile-store-assets",
+  "description": "Generate App Store and Google Play screenshots, store listings, and feature graphics for mobile apps. Includes ASO best practices and visual screenshot composition.",
+  "version": "1.0.0",
+  "author": {
+    "name": "David Broadhurst"
+  },
+  "repository": "https://github.com/davidbroadhurst/mobile-store-assets",
+  "license": "MIT"
+}

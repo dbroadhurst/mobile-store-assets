@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+PLUGIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+[ -d "$PLUGIN_DIR/node_modules" ] || npm install --prefix "$PLUGIN_DIR" --silent
+exec npx --prefix "$PLUGIN_DIR" tsx "$PLUGIN_DIR/src/index.ts" "$@"
