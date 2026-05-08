@@ -1,9 +1,50 @@
 {
   "name": "mobile-store-assets",
-  "version": "1.0.0",
+  "version": "1.1.0",
+  "description": "Generate every iOS and Android marketing image — App Store + Google Play screenshots, feature graphics, Wear OS, TV banner — from your raw screenshots. Authors ASO copy as a 4-set A/B test matrix.",
   "type": "module",
+  "license": "MIT",
+  "author": {
+    "name": "David Broadhurst",
+    "url": "https://github.com/dbroadhurst"
+  },
+  "homepage": "https://github.com/dbroadhurst/mobile-store-assets",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dbroadhurst/mobile-store-assets.git"
+  },
+  "bugs": {
+    "url": "https://github.com/dbroadhurst/mobile-store-assets/issues"
+  },
+  "keywords": [
+    "claude-code",
+    "claude-plugin",
+    "app-store",
+    "google-play",
+    "ios",
+    "android",
+    "aso",
+    "screenshots",
+    "marketing",
+    "store-listing",
+    "ppo",
+    "feature-graphic"
+  ],
   "bin": {
     "store-assets-gen": "./bin/store-assets-gen"
+  },
+  "files": [
+    "bin",
+    "src",
+    "skills",
+    "templates",
+    ".claude-plugin",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@google/genai": "^0.7.0",

@@ -20,6 +20,12 @@ brand:
     No hex codes. Example: "Soft teal gradient, subtle geometric shapes,
     clean minimalist professional aesthetic, no text, no people, no UI elements"
 
+# ── Image generation provider ─────────────────────────────────────────────────
+# Optional. If set, this provider is preferred when both API keys are present.
+# Override at run time with `store-assets-gen --provider openai|google`.
+# When unset, the first key found in marketing/.env.local is used.
+# default_provider: openai
+
 # ── Image generation models ───────────────────────────────────────────────────
 # Set whichever provider you use. The first key found in marketing/.env.local is used.
 

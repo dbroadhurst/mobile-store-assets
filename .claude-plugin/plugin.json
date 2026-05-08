@@ -1,10 +1,31 @@
 {
   "name": "mobile-store-assets",
-  "description": "Generate App Store and Google Play screenshots, store listings, and feature graphics for mobile apps. Includes ASO best practices and visual screenshot composition.",
-  "version": "1.0.0",
+  "description": "Generate every iOS and Android marketing image — App Store + Google Play screenshots, feature graphics, Wear OS, TV banner — from your raw screenshots. Authors ASO copy as a 4-set A/B test matrix using deterministic CSS/SVG composition or AI backgrounds. Six skills covering bootstrap, ASO, iOS / Android requirements, render, and the toolkit foundations.",
+  "version": "1.1.0",
   "author": {
     "name": "David Broadhurst"
   },
-  "repository": "https://github.com/davidbroadhurst/mobile-store-assets",
+  "homepage": "https://github.com/dbroadhurst/mobile-store-assets",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dbroadhurst/mobile-store-assets.git"
+  },
+  "bugs": {
+    "url": "https://github.com/dbroadhurst/mobile-store-assets/issues"
+  },
+  "keywords": [
+    "claude-code",
+    "claude-plugin",
+    "app-store",
+    "google-play",
+    "ios",
+    "android",
+    "aso",
+    "screenshots",
+    "marketing",
+    "store-listing",
+    "ppo",
+    "feature-graphic"
+  ],
   "license": "MIT"
 }

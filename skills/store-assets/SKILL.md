@@ -1,13 +1,18 @@
 ---
 name: store-assets
 description: >
-  Generate iOS and Android store assets from a spec.yaml file.
-  Writes store-listing.md text files directly, then runs the image generation
-  script (Imagen 4 / gpt-image-1 + Sharp) to produce promotional screenshots
-  and the Google Play feature graphic. Run /store-spec first to create the spec.
-argument-hint: "[version] [--platform android|ios|all] [--images-only] [--text-only]"
+  Render the App Store / Google Play test matrix from spec.yaml. By default
+  produces ABCD sets — multiple internally-coherent listing variants — using
+  CSS/SVG composition (free, instant, deterministic). Optional --use-ai-bg
+  routes background generation through Imagen / gpt-image-1 for photographic
+  textures. Run /store-spec first to author the matrix.
+argument-hint: "[version] [--sets N|A,B,C] [--platform p1,p2|all] [--locales en-US,...] [--include-6.5] [--use-ai-bg] [--provider openai|google] [--regen id|all] [--dry-run] [--images-only] [--text-only]"
 allowed-tools: Read Write Bash
 ---
+
+## Tooling check
+
+!`command -v store-assets-gen >/dev/null 2>&1 && echo "✓ store-assets-gen found on PATH" || echo "⚠️  store-assets-gen not found on PATH — re-install the plugin"`
 
 ## Project config
 
@@ -26,76 +31,25 @@ allowed-tools: Read Write Bash
 Arguments: $ARGUMENTS
 
 **Parse the arguments:**
-- First bare version number = version (e.g. `1.0.20`). If omitted, use the latest in `marketing/releases/`.
-- `--platform android|ios|all` — defaults to all
-- `--images-only` — skip writing store-listing.md files
-- `--text-only` — skip image generation
+- First bare version number = version. If omitted, use the latest in `marketing/releases/`.
+- `--sets <N>` (default `4`) or `--sets A,B,C` — how many / which sets from the matrix to render. `--sets 1` = single-set mode (matches pre-matrix behaviour).
+- `--platform <list>` — comma-separated platform keys or `all`. Defaults to default-enabled platforms (current store-required sizes).
+- **Default-enabled platforms** (always rendered with `--platform all`):
+  `ios-phone` (1320×2868, iPhone 6.9"), `ios-tablet-13` (2064×2752, iPad Pro 13"), `ios-tablet` (2048×2732, iPad Pro 12.9" — kept default for back-compat), `android-phone` (1440×2880), `android-tablet` (1600×2560 / 10")
+- **Opt-in platforms** (turn on via `--include-<key>` or `--include-all`):
+  `--include-6.7` (iPhone 6.7", 1290×2796), `--include-6.5` (iPhone 6.5", 1242×2688), `--include-12.9` (iPad Pro 12.9" alias), `--include-7-tablet` (Android 7" tablet, 1200×1920), `--include-wear` (Wear OS, 384×384), `--include-tv-banner` (Android TV banner, 1280×720)
+- **`--include-all`** — turn on every opt-in platform in one go (the maximal asset bundle).
+- `--locales en-US,fr-FR,...` — render per-locale variants. Each (locale × set) gets its own subfolder.
+- `--use-ai-bg` — route background generation through Imagen / gpt-image-1 instead of CSS/SVG. Slow, costs API credits, requires `OPENAI_API_KEY` or `GOOGLE_AI_API_KEY` in `marketing/.env.local`. CSS/SVG is the default.
+- `--provider openai|google` — force a provider when both keys are present (only matters with `--use-ai-bg`).
+- `--regen <id|id1,id2|all>` — bypass the AI cache for the listed ids. Only relevant with `--use-ai-bg`.
+- `--dry-run` — same as a live run but never calls the AI provider; CSS/SVG always renders. Good for free iteration.
+- `--images-only` — skip writing store-listing.md files.
+- `--text-only` — skip image generation.
 
 ---
 
-### Step 1 — Write store-listing.md files (unless --images-only)
-
-Read the spec above and write two formatted files that can be directly copy-pasted into the store consoles.
-
-**Write `marketing/releases/{version}/output/google-play/store-listing.md`:**
-
-```markdown
-# Google Play Store Listing — {App Name} {version}
-_Generated {date} · Ready to paste into Google Play Console → Store listing_
-
----
-
-## Title  ({n}/30 chars)
-{title}
-
-## Short Description  ({n}/80 chars)
-{short_description}
-
-## Full Description  ({n}/4000 chars)
-{full_description}
-
-## What's New  ({n}/500 chars)
-{recent_changes}
-
----
-_Upload screenshots from: `output/google-play/phone/` and `output/google-play/tablet/`_
-_Upload feature graphic from: `output/google-play/feature-graphic.png`_
-```
-
-**Write `marketing/releases/{version}/output/app-store/store-listing.md`:**
-
-```markdown
-# App Store Listing — {App Name} {version}
-_Generated {date} · Ready to paste into App Store Connect → App Information_
-
----
-
-## App Name  ({n}/30 chars)
-{name}
-
-## Subtitle  ({n}/30 chars)
-{subtitle}
-
-## Promotional Text  ({n}/170 chars)
-{promotional_text}
-
-## Description  ({n}/4000 chars)
-{description}
-
-## Keywords  ({n}/100 chars)
-{keywords}
-
----
-_Upload screenshots from: `output/app-store/iphone-6.9/` and `output/app-store/ipad-pro-12.9/`_
-```
-
-Show a character count warning for any field that exceeds its limit.
-
----
-
-### Step 2 — Run image generation (unless --text-only)
-
-Run the image script:
+### Step 1 — Run the CLI
 
 ```bash
 store-assets-gen \
@@ -105,22 +59,43 @@ store-assets-gen \
   --config "marketing/.store-config.yaml" \
   --screenshots "marketing/releases/{version}/screenshots" \
   --output "marketing/releases/{version}/output" \
-  --platform {platform}
+  --platform {platform} \
+  {extra-flags}
 ```
 
-Stream the output so the user can follow progress.
+Append flags as the user passed them: `--sets`, `--locales`, `--use-ai-bg`, `--provider`, `--regen`, `--include-6.5`, `--dry-run`, `--images-only`, `--text-only`.
 
-If the script exits with an error, show the error clearly and suggest:
-- Check `marketing/.env.local` contains `OPENAI_API_KEY=...` or `GOOGLE_AI_API_KEY=...`
-- Check screenshot files exist in the correct platform subfolders
-- Check `spec.yaml` sources match actual filenames
+Stream output. The CLI logs each set, screenshot, platform, and write path.
 
 ---
 
-### Step 3 — Summary
+### Step 2 — Summary
 
-After everything completes, print a clean summary:
-- Files written (store-listing.md paths)
-- Images generated (count per platform)
-- Output root path
-- Next steps: copy to store consoles
+After the run, surface:
+- Total images produced (sets × platforms × locales × screenshots)
+- Output structure: `output/[locale/]set-X/{google-play,app-store}/...`
+- Any character-limit warnings printed by the CLI
+- The auto-emitted **review page**: `marketing/releases/{version}/review.html` — point the user to open it in their browser. It loads `manifest.json` from the same folder and shows every render with thumbs-up / thumbs-down + per-image comment + global comment, persisting locally and exporting `reviews.json` they can hand back for follow-up changes.
+- Suggest: review sets visually, pick favourites, ship to Apple PPO (max 3 variants) and Google Play store-listing experiments
+
+---
+
+### Output layout
+
+```
+output/
+  set-A/
+    google-play/{phone,tablet,feature-graphic.png,store-listing.md}
+    app-store/{iphone-6.9,ipad-pro-12.9,store-listing.md}
+  set-B/  ...
+  set-C/  ...
+  set-D/  ...
+```
+
+With locales:
+```
+output/en-US/set-A/...
+output/fr-FR/set-A/...
+```
+
+If `--sets 1` was used, the `set-X/` segment is omitted (matches pre-matrix output paths).

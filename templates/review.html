@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>{{VERSION}} matrix review</title>
+<style>
+  * { box-sizing: border-box; }
+  :root {
+    --bg: #1c1c1e;
+    --card: #28282b;
+    --card-hover: #2f2f33;
+    --border: #3a3a3d;
+    --border-strong: #6c6c70;
+    --text: #f5f5f7;
+    --muted: #a0a0a8;
+    --dim: #6c6c70;
+    --up: #4ade80;
+    --up-bg: rgba(74, 222, 128, 0.15);
+    --down: #f87171;
+    --down-bg: rgba(248, 113, 113, 0.15);
+    --accent: #5C8EFF;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    margin: 0;
+    padding: 0;
+    min-height: 100vh;
+  }
+
+  header {
+    position: sticky; top: 0; z-index: 10;
+    background: rgba(28, 28, 30, 0.95);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border);
+    padding: 20px 32px 16px;
+  }
+  header .row {
+    max-width: 1600px; margin: 0 auto;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 20px; flex-wrap: wrap;
+  }
+  h1 { margin: 0; font-size: 20px; font-weight: 600; }
+  p.lead { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+  .actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+  button {
+    background: var(--card); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 7px 13px; font-size: 13px; cursor: pointer;
+    transition: all 0.15s; font-family: inherit;
+  }
+  button:hover { background: var(--card-hover); border-color: var(--border-strong); }
+  button.primary {
+    background: var(--accent); border-color: var(--accent);
+    color: white; font-weight: 600;
+  }
+  button.primary:hover { filter: brightness(1.1); }
+  button.ghost { background: transparent; }
+
+  .toolbar {
+    max-width: 1600px; margin: 14px auto 0; padding: 0 32px;
+    display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
+    color: var(--muted); font-size: 13px;
+  }
+  .toolbar .group {
+    display: flex; gap: 4px;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 8px; padding: 3px;
+  }
+  .toolbar .group button {
+    padding: 4px 10px; background: transparent; border: none;
+    border-radius: 5px; color: var(--muted); font-size: 12px;
+  }
+  .toolbar .group button[aria-pressed="true"] {
+    background: var(--accent); color: white;
+  }
+  .toolbar select {
+    background: var(--card); color: var(--text);
+    border: 1px solid var(--border); border-radius: 7px;
+    padding: 6px 10px; font-size: 12px; font-family: inherit;
+    cursor: pointer;
+  }
+  .toolbar label.facet { display: flex; gap: 8px; align-items: center; }
+
+  .global-comment {
+    max-width: 1600px; margin: 20px auto 0; padding: 0 32px;
+  }
+  .global-comment label {
+    display: block; margin-bottom: 6px;
+    font-size: 11px; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 1.5px; font-weight: 600;
+  }
+  .global-comment textarea {
+    width: 100%; min-height: 60px; padding: 12px 14px;
+    background: var(--card); color: var(--text);
+    border: 1px solid var(--border); border-radius: 10px;
+    resize: vertical; font-family: inherit; font-size: 14px; line-height: 1.5;
+  }
+  .global-comment textarea:focus { outline: none; border-color: var(--accent); }
+
+  .section {
+    max-width: 1600px; margin: 28px auto 0; padding: 0 32px;
+  }
+  .section h2 {
+    font-size: 13px; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 2px;
+    margin: 0 0 14px;
+    display: flex; gap: 12px; align-items: baseline;
+  }
+  .section h2 .sub {
+    font-weight: 400; text-transform: none; letter-spacing: 0;
+    color: var(--dim); font-size: 12px;
+  }
+  .grid {
+    display: grid; gap: 16px;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  }
+
+  figure {
+    margin: 0;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    display: flex; flex-direction: column;
+    transition: border-color 0.15s;
+  }
+  figure[data-vote="up"]   { border-color: var(--up); }
+  figure[data-vote="down"] { border-color: var(--down); }
+  /* Aspect ratio is set inline per-card from the manifest's actual rendered
+     width/height — handles every platform AND landscape variants without a
+     per-platform CSS table. */
+
+  .thumb-wrap {
+    background: #0a0a0c;
+    cursor: zoom-in;
+    overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+  }
+  /* Landscape thumbs span 2 grid cells so they read at a useful size in the
+     same auto-fill grid as portrait ones. */
+  figure[data-orientation="landscape"] { grid-column: span 2; }
+  .thumb-wrap img { width: 100%; height: 100%; object-fit: contain; transition: transform 0.2s; }
+  .thumb-wrap:hover img { transform: scale(1.02); }
+
+  .meta { padding: 11px 13px 8px; font-size: 12px; }
+  .meta .name {
+    font-weight: 600;
+    display: flex; justify-content: space-between; gap: 6px; align-items: baseline;
+  }
+  .meta .layout { color: var(--accent); font-size: 10px; font-family: ui-monospace, monospace; }
+  .meta .sub { color: var(--dim); font-size: 10px; margin-top: 2px; text-transform: uppercase; letter-spacing: 1px; }
+
+  .controls { padding: 0 13px 12px; display: flex; flex-direction: column; gap: 8px; margin-top: auto; }
+  .vote-row { display: flex; gap: 5px; }
+  .vote-btn {
+    flex: 1; padding: 6px;
+    font-size: 13px;
+    border-radius: 5px;
+  }
+  .vote-btn.up.active   { background: var(--up-bg);   border-color: var(--up);   color: var(--up);   }
+  .vote-btn.down.active { background: var(--down-bg); border-color: var(--down); color: var(--down); }
+
+  textarea.note {
+    width: 100%; min-height: 40px; padding: 7px 9px;
+    background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 5px;
+    resize: vertical; font-family: inherit; font-size: 11px; line-height: 1.4;
+  }
+  textarea.note:focus { outline: none; border-color: var(--accent); }
+
+  .status { color: var(--dim); font-size: 12px; margin-left: 8px; }
+  .status.saved { color: var(--up); }
+  .summary { color: var(--muted); font-size: 12px; }
+
+  details.json-viewer {
+    max-width: 1600px; margin: 32px auto 64px; padding: 0 32px;
+  }
+  details.json-viewer summary {
+    cursor: pointer; color: var(--muted); font-size: 13px; padding: 8px 0;
+  }
+  pre.json {
+    background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+    padding: 16px; color: #c9d1d9; font-family: ui-monospace, monospace;
+    font-size: 12px; line-height: 1.5; overflow-x: auto; margin: 8px 0 0;
+  }
+
+  .lightbox {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.95); z-index: 100;
+    align-items: center; justify-content: center;
+    padding: 24px; cursor: zoom-out;
+  }
+  .lightbox.open { display: flex; }
+  .lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  .lightbox .caption {
+    position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%);
+    color: var(--text); background: rgba(28,28,30,0.85);
+    border: 1px solid var(--border); padding: 8px 14px; border-radius: 8px;
+    font-size: 13px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="row">
+    <div>
+      <h1>{{VERSION}} matrix review</h1>
+      <p class="lead">Actual production renders. Vote / comment per image; auto-saves to your browser; <strong>Save to file</strong> when done.</p>
+    </div>
+    <div class="actions">
+      <span class="status" id="status">Loading…</span>
+      <button class="ghost" id="reset">Clear</button>
+      <button class="ghost" id="copy">Copy JSON</button>
+      <button class="primary" id="save">Save to file</button>
+    </div>
+  </div>
+</header>
+
+<div class="toolbar">
+  <span>Group:</span>
+  <div class="group" role="tablist" id="grouping">
+    <button data-group="set"        aria-pressed="true">Set</button>
+    <button data-group="screenshot" aria-pressed="false">Screenshot</button>
+    <button data-group="layout"     aria-pressed="false">Layout</button>
+    <button data-group="device"     aria-pressed="false">Device</button>
+    <button data-group="platform"   aria-pressed="false">Platform</button>
+    <button data-group="flat"       aria-pressed="false">Flat</button>
+  </div>
+
+  <label class="facet">Platform: <select id="filter-platform">
+    <option value="">All</option>
+    <option value="iphone-6.9">iPhone 6.9"</option>
+    <option value="ipad-pro-12.9">iPad Pro 12.9"</option>
+    <option value="android-phone">Android phone</option>
+    <option value="android-tablet">Android tablet</option>
+    <option value="google-play">Feature graphic</option>
+  </select></label>
+
+  <label class="facet">Set: <select id="filter-set">
+    <option value="">All</option>
+    <option>A</option><option>B</option><option>C</option><option>D</option>
+  </select></label>
+
+  <label class="facet">Show:
+    <select id="filter-status">
+      <option value="">All</option>
+      <option value="up">👍 only</option>
+      <option value="down">👎 only</option>
+      <option value="unreviewed">Unreviewed</option>
+    </select>
+  </label>
+
+  <span class="summary" id="summary"></span>
+</div>
+
+<div class="global-comment">
+  <label for="global">Overall comment</label>
+  <textarea id="global" placeholder="Direction notes, what's working, what's not, what to try next..."></textarea>
+</div>
+
+<div id="sections"></div>
+
+<details class="json-viewer">
+  <summary>Show review JSON</summary>
+  <pre class="json" id="json-preview"></pre>
+</details>
+
+<div class="lightbox" id="lightbox">
+  <img id="lightbox-img" alt=""/>
+  <div class="caption" id="lightbox-caption"></div>
+</div>
+
+<script>
+// Manifest is inlined at build time so the page works when opened directly
+// via file:// (no fetch — browsers block sibling-file fetches over file://).
+const MANIFEST = /*__MANIFEST_START__*/{{MANIFEST_JSON}}/*__MANIFEST_END__*/;
+
+const STORAGE_KEY = 'mobile-store-assets:review:{{VERSION}}:v3';
+
+let manifest = MANIFEST;
+let state = loadState();
+
+(function init() {
+  if (!manifest || !Array.isArray(manifest.items) || manifest.items.length === 0) {
+    document.getElementById('sections').innerHTML =
+      `<p style="max-width:1600px;margin:32px auto;padding:0 32px;color:#f87171;">
+       No images in the manifest. Re-run <code>store-assets-gen</code>.</p>`;
+    setStatus('manifest empty', false);
+    return;
+  }
+
+  document.getElementById('global').value = state.global_comment ?? '';
+  document.getElementById('global').addEventListener('input', debounce(() => {
+    state.global_comment = document.getElementById('global').value;
+    saveState();
+  }, 300));
+
+  document.querySelectorAll('#grouping button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#grouping button').forEach(b => b.setAttribute('aria-pressed', 'false'));
+      btn.setAttribute('aria-pressed', 'true');
+      state.grouping = btn.dataset.group;
+      saveState(); render();
+    });
+  });
+  if (state.grouping) {
+    const btn = document.querySelector(`#grouping button[data-group="${state.grouping}"]`);
+    if (btn) {
+      document.querySelectorAll('#grouping button').forEach(b => b.setAttribute('aria-pressed', 'false'));
+      btn.setAttribute('aria-pressed', 'true');
+    }
+  } else {
+    state.grouping = 'set';
+  }
+
+  ['filter-platform', 'filter-set', 'filter-status'].forEach(id => {
+    const el = document.getElementById(id);
+    el.value = state.filters?.[id] ?? '';
+    el.addEventListener('change', () => {
+      state.filters = state.filters ?? {};
+      state.filters[id] = el.value;
+      saveState(); render();
+    });
+  });
+
+  setStatus(`${manifest.items.length} renders loaded`, false);
+  updateSummary();
+  render();
+  updateJsonPreview();
+})();
+
+// ─── Filtering & rendering ──────────────────────────────────────────────────
+function visibleItems() {
+  if (!manifest) return [];
+  let items = manifest.items;
+  const f = state.filters ?? {};
+  if (f['filter-platform']) items = items.filter(i => i.platform === f['filter-platform']);
+  if (f['filter-set'])      items = items.filter(i => i.set === f['filter-set']);
+  if (f['filter-status'] === 'up')         items = items.filter(i => state.reviews[i.key]?.vote === 'up');
+  else if (f['filter-status'] === 'down')  items = items.filter(i => state.reviews[i.key]?.vote === 'down');
+  else if (f['filter-status'] === 'unreviewed') items = items.filter(i => !state.reviews[i.key]?.vote);
+  return items;
+}
+
+function render() {
+  const root = document.getElementById('sections');
+  root.innerHTML = '';
+  const items = visibleItems();
+  document.getElementById('summary').textContent = `Showing ${items.length} of ${manifest.items.length} renders`;
+
+  let groups;
+  switch (state.grouping) {
+    case 'screenshot': groups = groupBy(items, i => i.screenshot, k => `Screenshot · ${k}`, k => slotForScreenshot(k)); break;
+    case 'layout':     groups = groupBy(items, i => i.layout,     k => `Layout · ${k}`,     () => ''); break;
+    case 'platform':   groups = groupBy(items, i => i.platform,   k => `Platform · ${k}`,   () => ''); break;
+    case 'device':     groups = groupBy(items, i => deviceFamily(i.platform), k => k, () => ''); break;
+    case 'flat':       groups = [{ label: '', sub: '', items }]; break;
+    case 'set':
+    default:           groups = groupBy(items, i => i.set,        k => `Set ${k}`,          k => themeForSet(k)); break;
+  }
+
+  for (const grp of groups) {
+    const sec = document.createElement('section');
+    sec.className = 'section';
+    if (grp.label) {
+      sec.innerHTML = `<h2>${escapeHtml(grp.label)} <span class="sub">${escapeHtml(grp.sub ?? '')}</span></h2>`;
+    }
+    const grid = document.createElement('div');
+    grid.className = 'grid';
+    for (const item of grp.items) grid.appendChild(card(item));
+    sec.appendChild(grid);
+    root.appendChild(sec);
+  }
+  updateSummary();
+}
+
+function groupBy(items, keyFn, labelFn, subFn) {
+  const buckets = new Map();
+  for (const it of items) {
+    const k = keyFn(it);
+    if (!buckets.has(k)) buckets.set(k, []);
+    buckets.get(k).push(it);
+  }
+  return [...buckets.entries()].map(([k, list]) => ({
+    label: labelFn(k),
+    sub: subFn ? subFn(k) : '',
+    items: list,
+  }));
+}
+
+function themeForSet(setId) {
+  const it = manifest.items.find(i => i.set === setId);
+  return it ? it.theme : '';
+}
+function deviceFamily(platform) {
+  if (platform === 'iphone-6.9' || platform === 'iphone-6.5') return 'iPhone';
+  if (platform === 'ipad-pro-12.9') return 'iPad';
+  if (platform === 'android-phone') return 'Android phone';
+  if (platform === 'android-tablet') return 'Android tablet';
+  if (platform === 'google-play') return 'Google Play feature';
+  return platform;
+}
+function slotForScreenshot(screenshotId) {
+  const items = manifest.items.filter(i => i.screenshot === screenshotId);
+  const slots = [...new Set(items.map(i => i.slot))];
+  return slots.join(' · ') + ' slot';
+}
+
+function card(item) {
+  const review = state.reviews[item.key] ?? { vote: null, comment: '' };
+  const fig = document.createElement('figure');
+  fig.dataset.vote = review.vote || '';
+  fig.dataset.platform = item.platform;
+  fig.dataset.orientation = item.orientation || (item.height > item.width ? 'portrait' : 'landscape');
+  // Aspect ratio set inline from the manifest's actual rendered dimensions —
+  // handles every platform AND landscape variants without per-platform CSS.
+  const aspect = (item.width && item.height)
+    ? `${item.width} / ${item.height}`
+    : '1320 / 2868';
+  fig.innerHTML = `
+    <div class="thumb-wrap" style="aspect-ratio: ${aspect}">
+      <img src="${escapeHtml(item.src)}" alt="${escapeHtml(item.key)}" loading="lazy"
+           onerror="this.style.opacity=0.2"/>
+    </div>
+    <div class="meta">
+      <div class="name">
+        <span>Set ${escapeHtml(item.set)} · ${escapeHtml(item.screenshot)}</span>
+        <span class="layout">${escapeHtml(item.layout)}</span>
+      </div>
+      <div class="sub">${escapeHtml(item.platform)} · ${escapeHtml(item.slot)}</div>
+    </div>
+    <div class="controls">
+      <div class="vote-row">
+        <button class="vote-btn up   ${review.vote === 'up'   ? 'active' : ''}" data-vote="up">👍</button>
+        <button class="vote-btn down ${review.vote === 'down' ? 'active' : ''}" data-vote="down">👎</button>
+      </div>
+      <textarea class="note" placeholder="Notes…">${escapeHtml(review.comment ?? '')}</textarea>
+    </div>
+  `;
+  fig.querySelectorAll('.vote-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const vote = btn.dataset.vote;
+      const cur = state.reviews[item.key] ?? { vote: null, comment: '' };
+      cur.vote = cur.vote === vote ? null : vote;
+      state.reviews[item.key] = cur;
+      fig.dataset.vote = cur.vote || '';
+      fig.querySelectorAll('.vote-btn').forEach(b =>
+        b.classList.toggle('active', cur.vote === b.dataset.vote));
+      saveState();
+      updateSummary();
+    });
+  });
+  const ta = fig.querySelector('textarea.note');
+  ta.addEventListener('input', debounce(() => {
+    const cur = state.reviews[item.key] ?? { vote: null, comment: '' };
+    cur.comment = ta.value;
+    state.reviews[item.key] = cur;
+    saveState();
+  }, 300));
+  fig.querySelector('.thumb-wrap').addEventListener('click', () => {
+    openLightbox(item.src, `Set ${item.set} · ${item.screenshot} · ${item.platform} · ${item.layout}`);
+  });
+  return fig;
+}
+
+function openLightbox(src, cap) {
+  const lb = document.getElementById('lightbox');
+  document.getElementById('lightbox-img').src = src;
+  document.getElementById('lightbox-caption').textContent = cap;
+  lb.classList.add('open');
+}
+document.getElementById('lightbox').addEventListener('click', () =>
+  document.getElementById('lightbox').classList.remove('open'));
+window.addEventListener('keydown', e => {
+  if (e.key === 'Escape') document.getElementById('lightbox').classList.remove('open');
+});
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {}
+  return { global_comment: '', reviews: {}, grouping: 'set', filters: {} };
+}
+function saveState() {
+  state.saved_at = new Date().toISOString();
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  updateJsonPreview();
+  setStatus('Saved · ' + new Date().toLocaleTimeString(), true);
+  clearTimeout(saveState._t);
+  saveState._t = setTimeout(() => setStatus(`${manifest.items.length} renders loaded`, false), 1500);
+}
+function updateJsonPreview() {
+  document.getElementById('json-preview').textContent = JSON.stringify(stateForExport(), null, 2);
+}
+function stateForExport() {
+  const exported = {
+    version: manifest?.version ?? '',
+    global_comment: state.global_comment ?? '',
+    reviews: {},
+    saved_at: new Date().toISOString(),
+  };
+  for (const item of (manifest?.items ?? [])) {
+    const r = state.reviews[item.key];
+    if (!r || (r.vote == null && !r.comment)) continue;
+    exported.reviews[item.key] = {
+      set: item.set, screenshot: item.screenshot, platform: item.platform,
+      layout: item.layout, slot: item.slot, src: item.src,
+      vote: r.vote, comment: r.comment,
+    };
+  }
+  return exported;
+}
+function setStatus(text, saved) {
+  const el = document.getElementById('status');
+  el.textContent = text;
+  el.classList.toggle('saved', !!saved);
+}
+function updateSummary() {
+  if (!manifest) return;
+  const total = manifest.items.length;
+  const ups   = manifest.items.filter(i => state.reviews[i.key]?.vote === 'up').length;
+  const downs = manifest.items.filter(i => state.reviews[i.key]?.vote === 'down').length;
+  const remain = total - ups - downs;
+  const cur = visibleItems().length;
+  document.getElementById('summary').textContent =
+    `Showing ${cur} of ${total} · 👍 ${ups} · 👎 ${downs} · ${remain} unreviewed`;
+}
+
+document.getElementById('save').addEventListener('click', async () => {
+  const payload = JSON.stringify(stateForExport(), null, 2);
+  const blob = new Blob([payload], { type: 'application/json' });
+  if ('showSaveFilePicker' in window) {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: 'reviews.json',
+        types: [{ description: 'JSON', accept: { 'application/json': ['.json'] } }],
+      });
+      const w = await handle.createWritable();
+      await w.write(blob);
+      await w.close();
+      setStatus('Saved to file ✓', true);
+      return;
+    } catch (e) { if (e.name !== 'AbortError') console.error(e); else return; }
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'reviews.json';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  setStatus('Downloaded reviews.json', true);
+});
+
+document.getElementById('copy').addEventListener('click', async () => {
+  await navigator.clipboard.writeText(JSON.stringify(stateForExport(), null, 2));
+  setStatus('Copied to clipboard ✓', true);
+});
+
+document.getElementById('reset').addEventListener('click', () => {
+  if (!confirm('Clear all votes and comments?')) return;
+  state = { global_comment: '', reviews: {}, grouping: state.grouping, filters: state.filters };
+  localStorage.removeItem(STORAGE_KEY);
+  location.reload();
+});
+
+function debounce(fn, ms) {
+  let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
+}
+function escapeHtml(s) {
+  return (s ?? '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+</script>
+</body>
+</html>

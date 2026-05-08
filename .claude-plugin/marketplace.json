@@ -1,0 +1,27 @@
+{
+  "name": "dbroadhurst",
+  "owner": {
+    "name": "David Broadhurst",
+    "url": "https://github.com/dbroadhurst"
+  },
+  "plugins": [
+    {
+      "name": "mobile-store-assets",
+      "source": ".",
+      "description": "Generate every iOS and Android marketing image — App Store + Google Play screenshots, feature graphics, Wear OS, TV banner — from your raw screenshots. Authors ASO copy as a 4-set A/B test matrix using deterministic CSS/SVG composition or AI backgrounds.",
+      "version": "1.1.0",
+      "author": "David Broadhurst",
+      "license": "MIT",
+      "homepage": "https://github.com/dbroadhurst/mobile-store-assets",
+      "keywords": [
+        "app-store",
+        "google-play",
+        "ios",
+        "android",
+        "aso",
+        "screenshots",
+        "marketing"
+      ]
+    }
+  ]
+}

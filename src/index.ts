@@ -5,21 +5,78 @@ import { fileURLToPath } from 'url';
 import yaml from 'js-yaml';
 import sharp from 'sharp';
 
-import type { Spec, StoreConfig, Platform, LayoutInput } from './types.js';
-import { PLATFORMS, FEATURE_GRAPHIC } from './config.js';
-import { generateBackground, generateFeatureGraphicBg, type Provider } from './gemini.js';
-import { resizeBg, escapeXml, fitText } from './helpers.js';
-import { heroCenter } from './layouts/hero.js';
-import { split } from './layouts/split.js';
-import { featureCallout } from './layouts/callout.js';
-import { cta } from './layouts/cta.js';
+import type {
+  Spec,
+  StoreConfig,
+  Platform,
+  LayoutInput,
+  ScreenshotSpec,
+  ProviderId,
+  SetSpec,
+  Theme,
+} from './types.js';
+import { requiresScreenshot } from './types.js';
+import { PLATFORMS, FEATURE_GRAPHIC, DEFAULT_LOCALE } from './config.js';
+import {
+  generateBackground,
+  generateFeatureGraphicBg,
+  sizeKey,
+  type Provider,
+  type OpenAIQuality,
+} from './gemini.js';
+import { resizeBg, escapeXml, fitText, screenshotAspect } from './helpers.js';
+import { layoutForSet } from './story-arc.js';
+import { textHero } from './layouts/text-hero.js';
+import { captionBelow } from './layouts/caption-below.js';
+import { uppercaseTop } from './layouts/uppercase-top.js';
+import { logoTilted } from './layouts/logo-tilted.js';
+import { highlightPill } from './layouts/highlight-pill.js';
+import { sideList } from './layouts/side-list.js';
+import { cardTilted } from './layouts/card-tilted.js';
+import { dualPhoneOverlap } from './layouts/dual-phone.js';
+import { wearOs } from './layouts/wear-os.js';
+import { tvBanner } from './layouts/tv-banner.js';
+import { landscapeSplit } from './layouts/landscape-split.js';
+import { landscapeHero } from './layouts/landscape-hero.js';
+import { landscapeTextOnly } from './layouts/landscape-text-only.js';
+import { BackgroundCache } from './cache.js';
+import { writeStoreListings } from './listing.js';
+import { extractTheme } from './colors.js';
+import { renderBackground } from './backgrounds.js';
+import { resolveSets, resolveScreenshot, parseSetsArg } from './matrix.js';
+import { writeReviewFiles, type ManifestItem } from './review.js';
 
 // ─── Bootstrap ────────────────────────────────────────────────────────────────
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// Parse CLI: --version, --spec, --config, --screenshots, --output, --platform, --images-only, --text-only
-function parseArgs() {
+interface CliArgs {
+  version: string;
+  projectRoot: string;
+  specPath: string;
+  configPath: string;
+  screenshotsDir: string;
+  outputDir: string;
+  platforms: (Platform | 'all')[];
+  imagesOnly: boolean;
+  textOnly: boolean;
+  dryRun: boolean;
+  /** Whether AI backgrounds will actually be used (decided at run time). */
+  useAiBg: boolean;
+  /** Original flag values, before the auto-detect logic resolves them. */
+  useAiBgFlag: boolean;
+  cssBgFlag: boolean;
+  providerOverride?: ProviderId;
+  regenIds: string[];
+  locales: string[];
+  includeIphone6_5: boolean;
+  /** Raw --include-<key> tokens (e.g. ["6.7", "wear", "tv-banner"]) */
+  includeKeys: string[];
+  includeAll: boolean;
+  setsArg?: string;
+}
+
+function parseArgs(): CliArgs {
   const args = process.argv.slice(2);
   const get = (flag: string) => { const i = args.indexOf(flag); return i !== -1 ? args[i + 1] : undefined; };
   const has = (flag: string) => args.includes(flag);
@@ -30,11 +87,50 @@ function parseArgs() {
   const configPath   = get('--config')      ?? 'marketing/.store-config.yaml';
   const screenshotsDir = get('--screenshots') ?? `marketing/releases/${version}/screenshots`;
   const outputDir    = get('--output')      ?? `marketing/releases/${version}/output`;
-  const platforms    = (get('--platform') ?? 'all').split(',') as (Platform | 'all')[];
+  const platforms    = (get('--platform') ?? 'all').split(',').map(s => s.trim()) as (Platform | 'all')[];
   const imagesOnly   = has('--images-only');
   const textOnly     = has('--text-only');
+  const dryRun       = has('--dry-run');
+  // AI backgrounds. The user can force either path:
+  //   --use-ai-bg  forces AI even when keys are absent (will error)
+  //   --css-bg     forces CSS/SVG even when keys are present
+  // When neither flag is set, the runtime decides: AI if keys are configured,
+  // CSS otherwise. This matches the user's mental model — having keys means
+  // you want them used.
+  const useAiBgFlag  = has('--use-ai-bg');
+  const cssBgFlag    = has('--css-bg');
+  const providerArg  = get('--provider');
+  const providerOverride = (providerArg === 'openai' || providerArg === 'google') ? providerArg : undefined;
 
-  return { version, projectRoot, specPath, configPath, screenshotsDir, outputDir, platforms, imagesOnly, textOnly };
+  const regenRaw  = get('--regen') ?? '';
+  const regenIds  = regenRaw === ''     ? []
+                  : regenRaw === 'all'  ? ['*']
+                  : regenRaw.split(',').map(s => s.trim()).filter(Boolean);
+
+  const locales   = (get('--locales') ?? '').split(',').map(s => s.trim()).filter(Boolean);
+  // --include-<key> turns on opt-in platforms. --include-all turns on every
+  // non-default platform (legacy iOS sizes, 7" tablet, Wear OS, TV banner).
+  const includeAll = has('--include-all');
+  const includes = new Set<string>();
+  for (const a of args) {
+    const m = /^--include-(.+)$/.exec(a);
+    if (m) includes.add(m[1]);
+  }
+  const includeIphone6_5 = includes.has('6.5') || includes.has('iphone-6.5') || includeAll;
+
+  const setsArg = get('--sets');
+
+  return {
+    version, projectRoot, specPath, configPath, screenshotsDir, outputDir,
+    platforms, imagesOnly, textOnly, dryRun,
+    // useAiBg is finalised in main() once we know whether keys exist
+    useAiBg: false,
+    useAiBgFlag, cssBgFlag,
+    providerOverride, regenIds,
+    locales, includeIphone6_5, setsArg,
+    includeKeys: [...includes],
+    includeAll,
+  };
 }
 
 function detectLatestVersion(projectRoot: string): string {
@@ -55,10 +151,15 @@ function loadYaml<T>(p: string): T {
   return yaml.load(fs.readFileSync(p, 'utf8')) as T;
 }
 
-// Returns the first API key found in the env file (by line order), not by type priority.
-function parseFirstProvider(envPath: string): { provider: Provider; apiKey: string } | null {
+function pickProvider(
+  envPath: string,
+  override?: ProviderId,
+  fromConfig?: ProviderId,
+): { provider: Provider; apiKey: string } | null {
   let raw: string;
   try { raw = fs.readFileSync(envPath, 'utf8'); } catch { return null; }
+
+  const keys: Record<ProviderId, string | null> = { openai: null, google: null };
   for (const line of raw.split('\n')) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#')) continue;
@@ -67,186 +168,699 @@ function parseFirstProvider(envPath: string): { provider: Provider; apiKey: stri
     const k = trimmed.slice(0, eq).trim();
     const v = trimmed.slice(eq + 1).replace(/^["']|["']$/g, '').trim();
     if (!v) continue;
-    if (k === 'OPENAI_API_KEY')    return { provider: 'openai',  apiKey: v };
-    if (k === 'GOOGLE_AI_API_KEY') return { provider: 'google',  apiKey: v };
+    if (k === 'OPENAI_API_KEY')    keys.openai = v;
+    if (k === 'GOOGLE_AI_API_KEY') keys.google = v;
+  }
+
+  const preferred: ProviderId[] = [];
+  if (override) preferred.push(override);
+  if (fromConfig && fromConfig !== override) preferred.push(fromConfig);
+
+  for (const p of preferred) {
+    if (keys[p]) return { provider: p, apiKey: keys[p]! };
+  }
+  if (keys.openai) return { provider: 'openai', apiKey: keys.openai };
+  if (keys.google) return { provider: 'google', apiKey: keys.google };
+  return null;
+}
+
+// Map internal Platform enum → human-readable label used in the manifest /
+// review.html. This keeps the on-disk JSON consistent with what the review
+// page CSS targets and avoids leaking internal naming to the user.
+function manifestPlatformLabel(p: Platform): string {
+  switch (p) {
+    case 'ios-phone':         return 'iphone-6.9';
+    case 'ios-phone-6.7':     return 'iphone-6.7';
+    case 'ios-phone-6.5':     return 'iphone-6.5';
+    case 'ios-tablet':        return 'ipad-pro-12.9';
+    case 'ios-tablet-13':     return 'ipad-pro-13';
+    case 'android-phone':     return 'android-phone';
+    case 'android-tablet':    return 'android-tablet';
+    case 'android-7-tablet':  return 'android-7-tablet';
+    case 'wear-os':           return 'wear-os';
+    case 'android-tv-banner': return 'android-tv-banner';
+    default:                  return p;
+  }
+}
+
+// ─── Layout dispatcher ────────────────────────────────────────────────────────
+
+async function renderLayout(input: LayoutInput, platform: Platform): Promise<Buffer> {
+  // Special-purpose surfaces ignore the spec's `layout` field — Wear OS and
+  // the TV banner have fixed compositions because phone-screenshot layouts
+  // don't make sense at 1:1 watch size or 16:9 banner.
+  if (platform === 'wear-os')           return wearOs(input);
+  if (platform === 'android-tv-banner') return tvBanner(input);
+
+  switch (input.screenshot.layout) {
+    // Portrait
+    case 'text-hero':           return textHero(input);
+    case 'caption-below':       return captionBelow(input);
+    case 'uppercase-top':       return uppercaseTop(input);
+    case 'logo-tilted':         return logoTilted(input);
+    case 'highlight-pill':      return highlightPill(input);
+    case 'side-list':           return sideList(input);
+    case 'card-tilted':         return cardTilted(input);
+    case 'dual-phone-overlap':  return dualPhoneOverlap(input);
+    // Landscape
+    case 'landscape-split':     return landscapeSplit(input);
+    case 'landscape-hero':      return landscapeHero(input);
+    case 'landscape-text-only': return landscapeTextOnly(input);
+    default:                    return textHero(input);
+  }
+}
+
+// ─── Source resolution ────────────────────────────────────────────────────────
+
+function resolveScreenshotPath(
+  ssDir: string,
+  ss: ScreenshotSpec,
+  platform: Platform,
+  layout: ScreenshotSpec['layout'],
+): string | null {
+  // Only resolve for layouts that actually need a phone. Anything else
+  // (text-hero, unknown legacy names) falls through here without a source.
+  if (!requiresScreenshot(layout)) return null;
+
+  const direct = ss.sources?.[platform];
+  if (direct) {
+    const p = path.join(ssDir, platform, direct);
+    if (fs.existsSync(p)) return p;
+  }
+
+  const fallback = PLATFORMS[platform].fallbackSourceFrom;
+  if (fallback) {
+    const fbName = ss.sources?.[fallback];
+    if (fbName) {
+      const p = path.join(ssDir, fallback, fbName);
+      if (fs.existsSync(p)) return p;
+    }
   }
   return null;
 }
 
-function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)); }
+// ─── Background acquisition ───────────────────────────────────────────────────
+// One background per (theme × orientation), not per (set × screenshot × platform).
+//
+// 4 themes × 2 orientations = 8 unique backgrounds for the entire matrix.
+// Each canvas size receives the same source background, centre-cropped to fit
+// via sharp's `cover + centre` resize. Backgrounds are brand decoration — they
+// don't need to differ per screenshot, and reusing them dramatically cuts AI
+// cost and time (was: 80 calls; now: 8).
+//
+// AI prompts are intentionally pushed toward GRAPHIC / illustrative output —
+// vector-style, flat color, abstract shapes — and away from photo-realism.
 
-// ─── Layout dispatcher ────────────────────────────────────────────────────────
+type Orientation = 'portrait' | 'landscape';
 
-async function renderLayout(input: LayoutInput, projectRoot: string): Promise<Buffer> {
-  switch (input.spec.layout) {
-    case 'split-right':     return split(input, 'right');
-    case 'split-left':      return split(input, 'left');
-    case 'feature-callout': return featureCallout(input);
-    case 'cta':             return cta(input, projectRoot);
-    default:                return heroCenter(input);
+function orientationFor(aspectRatio: string): Orientation {
+  return aspectRatio === '16:9' ? 'landscape' : 'portrait';
+}
+
+// Source dimensions for the canonical background of each orientation. Chosen
+// large enough that any platform canvas can be cover-cropped without upscaling
+// past comfortable sharpness for graphic/illustrative content.
+const ORIENTATION_DIMS: Record<Orientation, { w: number; h: number; aspectRatio: string }> = {
+  portrait:  { w: 1280, h: 2560, aspectRatio: '9:16' },
+  landscape: { w: 2048, h: 1024, aspectRatio: '16:9' },
+};
+
+const PHOTO_NEGATIVE =
+  'flat vector illustration style, abstract graphic design, no photograph, ' +
+  'no realistic objects, no people, no UI elements, no text, no letters, no numbers, no logos';
+
+// Composition rule that must apply to every background — text overlays the
+// upper-third (uppercase-top, caption-below, highlight-pill) and lower-third
+// (side-list, dual-phone), so the centre carries the visual interest.
+const TEXT_SAFE_DIRECTIVE =
+  'open uncluttered space at the top and bottom for headline text overlay, ' +
+  'visual interest concentrated in the centre, soft and subtle around the edges';
+
+function graphicStylePrompt(theme: Theme, app: AppContext): string {
+  // Per-bg-style prompt seeds. Each describes a graphic/illustrative composition
+  // and references the theme palette by NAME (never hex — Imagen treats hex as
+  // text and renders it visibly). The `app` block injects what the app actually
+  // does so backgrounds carry brand-relevant motifs (e.g. "subtle home and key
+  // silhouettes" for a mortgage app), tuned text-safe so headlines stay
+  // readable on top.
+  const motif = app.motifPhrase ? `, evoking ${app.motifPhrase}` : '';
+  const palette = theme.palette_name;
+  switch (theme.bg_style) {
+    case 'gradient':
+      return `Soft abstract gradient wash blending ${palette}${motif}, smooth flat color field, minimal modern composition. ${TEXT_SAFE_DIRECTIVE}`;
+    case 'mesh':
+      return `Abstract mesh-gradient composition with smooth color blends in ${palette}${motif}, flowing organic forms, modern flat design. ${TEXT_SAFE_DIRECTIVE}`;
+    case 'bokeh':
+      return `Abstract bokeh-style illustration with soft blurred color blobs in ${palette}${motif}, dreamy minimal vector look. ${TEXT_SAFE_DIRECTIVE}`;
+    case 'geometric':
+      return `Minimalist geometric abstract composition, simple overlapping shapes in ${palette}${motif}, flat vector design, modern aesthetic. ${TEXT_SAFE_DIRECTIVE}`;
+    case 'minimal':
+      return `Minimal flat color field in ${palette}${motif} with subtle radial vignette, clean modern design. ${TEXT_SAFE_DIRECTIVE}`;
   }
 }
 
-// ─── Feature graphic (Google Play 1024×500) ───────────────────────────────────
+// Light-touch context derived from the spec + config. We try to produce a
+// short "evoking X" phrase (e.g. "evoking houses, keys, financial planning")
+// without being too literal — the AI should hint at the topic, not draw it.
+interface AppContext {
+  motifPhrase: string;
+}
+
+function buildAppContext(spec: Spec, config: StoreConfig): AppContext {
+  const category = (config.app.category ?? '').trim().toLowerCase();
+  const keywords = [
+    ...(spec.aso?.primary_keywords ?? []),
+    ...(spec.aso?.secondary_keywords ?? []),
+  ].map(k => k.toLowerCase());
+  const positioning = (spec.aso?.positioning ?? '').toLowerCase();
+
+  // Curated motif map — the AI gets a short phrase rather than a literal list,
+  // so the background hints at the subject without becoming illustrative of it.
+  // Categories not in the map fall through to a generic abstract phrase.
+  const haystack = `${category} ${keywords.join(' ')} ${positioning}`;
+  const motifs: string[] = [];
+  const add = (m: string) => { if (!motifs.includes(m)) motifs.push(m); };
+
+  if (/mortgage|loan|finance|home|property|real estate|car loan|repayment|interest/.test(haystack))
+    add('houses, keys, gentle architectural silhouettes, financial planning');
+  if (/budget|spend|money|expense|saving|invest/.test(haystack))
+    add('coins, charts, growth curves, abstract money flow');
+  if (/health|fitness|workout|exercise|run|step/.test(haystack))
+    add('movement, soft pulses, energy lines');
+  if (/meditat|mindful|sleep|calm|breath/.test(haystack))
+    add('soft waves, gentle ripples, calm horizon lines');
+  if (/learn|education|study|language|quiz/.test(haystack))
+    add('open books, paths, growth arcs');
+  if (/photo|camera|gallery|art/.test(haystack))
+    add('frames, light leaks, soft prisms');
+  if (/travel|trip|map|navigation/.test(haystack))
+    add('soft maps, paths, distant horizons');
+
+  // Generic fallback if nothing matched
+  const motifPhrase = motifs.length > 0
+    ? motifs.join(' and ')
+    : 'modern minimal abstraction';
+
+  return { motifPhrase };
+}
+
+interface BgArgs {
+  args: CliArgs;
+  cache: BackgroundCache;
+  set: SetSpec;
+  theme: Theme;
+  orientation: Orientation;
+  provider: Provider;
+  model: string;
+  apiKey: string;
+  quality: OpenAIQuality;
+  appContext: AppContext;
+  /** In-memory bucket cache so a single run reuses the same buffer across platforms. */
+  bucket: Map<string, Buffer>;
+}
+
+async function acquireBackground(b: BgArgs): Promise<Buffer> {
+  // Cache key for the run. (theme.id × orientation × ai/css) — exactly 8 entries
+  // for a default ABCD matrix.
+  const memKey = `${b.theme.id}|${b.orientation}|${b.args.useAiBg ? 'ai' : 'css'}`;
+  const memHit = b.bucket.get(memKey);
+  if (memHit) return memHit;
+
+  const dims = ORIENTATION_DIMS[b.orientation];
+
+  // CSS/SVG path: deterministic from theme — render once at the canonical size.
+  if (!b.args.useAiBg) {
+    const buf = await renderBackground(b.theme, dims.w, dims.h);
+    b.bucket.set(memKey, buf);
+    return buf;
+  }
+
+  // AI path. Prompt is theme-driven (graphic/illustrative seeds) AND app-aware
+  // (motifs derived from spec.aso). Disk cache key drops the per-platform size
+  // — same theme + orientation reuses across all platforms in this and future
+  // runs. Caches also invalidate when the prompt changes (incl. motif phrase).
+  const prompt = graphicStylePrompt(b.theme, b.appContext);
+  const fullPrompt = `${prompt}. ${b.theme.palette_name}. ${PHOTO_NEGATIVE}`;
+  const diskKey = b.cache.key(b.provider, b.model, dims.aspectRatio, fullPrompt);
+
+  const forced = b.cache.shouldForce(b.theme.id) || b.cache.shouldForce(b.set.id) || b.cache.shouldForce('all');
+  let buf: Buffer | null = null;
+  if (!forced) {
+    buf = b.cache.read(diskKey);
+    if (buf) console.log(`    ✓  cache hit (${diskKey})`);
+  }
+  if (!buf) {
+    buf = await generateBackground({
+      provider: b.provider, model: b.model, apiKey: b.apiKey,
+      prompt: fullPrompt, aspectRatio: dims.aspectRatio, quality: b.quality,
+      label: `${b.set.id}/${b.theme.id} (${b.orientation})`,
+    });
+    b.cache.write(diskKey, buf);
+  }
+  b.bucket.set(memKey, buf);
+  return buf;
+}
+
+// ─── Feature graphic ──────────────────────────────────────────────────────────
 
 async function buildFeatureGraphic(
+  args: CliArgs,
+  cache: BackgroundCache,
   provider: Provider,
   model: string,
   apiKey: string,
   spec: Spec,
   config: StoreConfig,
   outputDir: string,
+  quality: OpenAIQuality,
+  theme: Theme,
+  set: SetSpec,
+  bucket: Map<string, Buffer>,
+  appContext: AppContext,
 ): Promise<void> {
   const { width, height } = FEATURE_GRAPHIC;
-  console.log('  Generating feature graphic background...');
+  console.log('  Generating feature graphic...');
 
-  const prompt = `${spec.style.theme_prompt ?? config.brand.theme_motif}. ` +
-    `Professional Google Play feature graphic. Wide landscape banner. ` +
-    `Gradient from deep teal to bright aqua. No text. No numbers. No letters.`;
+  // Reuse the landscape background generated for this theme. The feature
+  // graphic shares its (theme × orientation) bucket with anything else that
+  // happens to use 16:9 — keeps the matrix at 8 unique backgrounds total.
+  const bgRaw = await acquireBackground({
+    args, cache, set, theme,
+    orientation: 'landscape',
+    provider, model, apiKey, quality,
+    appContext, bucket,
+  });
 
-  const bgRaw = await generateFeatureGraphicBg(provider, model, apiKey, prompt);
-  const bg    = await resizeBg(bgRaw, width, height);
-
+  const bg = await resizeBg(bgRaw, width, height);
   const appName = config.app.name;
-  const tagline = spec.app_store.promotional_text ?? spec.app_store.subtitle ?? '';
+  const tagline = spec.app_store.subtitle ?? spec.app_store.promotional_text ?? '';
 
-  const safe     = width * 0.86;
-  const nameSz   = fitText(appName, safe * 0.55, Math.floor(height * 0.28), 0.60);
-  const tagSz    = fitText(tagline, safe * 0.55, Math.floor(height * 0.14), 0.54);
-  const nameY    = Math.floor(height * 0.42);
-  const taglineY = Math.floor(height * 0.70);
+  // ── App icon (left side, large, vertically centred) ────────────────────────
+  const iconSize = Math.floor(height * 0.62);
+  const iconLeft = Math.floor(width * 0.04);
+  const iconTop  = Math.floor((height - iconSize) / 2);
+  const iconAbs  = path.isAbsolute(config.app.icon)
+    ? config.app.icon
+    : path.join(args.projectRoot, config.app.icon);
+  let iconLayer: { input: Buffer; top: number; left: number } | null = null;
+  if (fs.existsSync(iconAbs)) {
+    const iconRaw = await sharp(iconAbs).resize(iconSize, iconSize, { fit: 'cover' }).png().toBuffer();
+    // Round corners (square icon → rounded square) for a softer feel
+    const radius = Math.floor(iconSize * 0.22);
+    const mask = Buffer.from(
+      `<svg width="${iconSize}" height="${iconSize}"><rect width="${iconSize}" height="${iconSize}" rx="${radius}" ry="${radius}" fill="white"/></svg>`
+    );
+    const iconBuf = await sharp(iconRaw).ensureAlpha()
+      .composite([{ input: mask, blend: 'dest-in' }]).png().toBuffer();
+    iconLayer = { input: iconBuf, top: iconTop, left: iconLeft };
+  }
 
+  // ── Text block (right of icon, vertically stacked) ─────────────────────────
+  const textLeft = iconLayer
+    ? iconLeft + iconSize + Math.floor(width * 0.04)
+    : Math.floor(width * 0.06);
+  const safe   = width - textLeft - Math.floor(width * 0.05);
+  const nameSz = fitText(appName, safe, Math.floor(height * 0.30), 0.60);
+  const tagSz  = fitText(tagline, safe, Math.floor(height * 0.13), 0.54);
+  const blockH = nameSz + Math.floor(height * 0.04) + tagSz;
+  const nameY  = Math.floor((height - blockH) / 2) + Math.floor(nameSz * 0.85);
+  const taglineY = nameY + Math.floor(height * 0.04) + tagSz;
+
+  // Light scrim only behind the icon (keeps text legible without darkening the
+  // whole banner). Dropped from full-width scrim to a small radial fade.
   const overlay = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0%"   stop-color="rgba(0,0,0,0.70)"/>
-      <stop offset="55%"  stop-color="rgba(0,0,0,0.35)"/>
-      <stop offset="100%" stop-color="rgba(0,0,0,0.05)"/>
-    </linearGradient>
-  </defs>
-  <rect width="${width}" height="${height}" fill="url(#g)"/>
-  <text x="72" y="${nameY}" dominant-baseline="middle"
-    font-family="Arial,Helvetica,sans-serif" font-size="${nameSz}" font-weight="700"
-    fill="#FFFFFF">${escapeXml(appName)}</text>
-  <text x="72" y="${taglineY}" dominant-baseline="middle"
+  <text x="${textLeft}" y="${nameY}" dominant-baseline="middle"
+    font-family="Arial,Helvetica,sans-serif" font-size="${nameSz}" font-weight="800"
+    fill="${theme.headline_color}">${escapeXml(appName)}</text>
+  <text x="${textLeft}" y="${taglineY}" dominant-baseline="middle"
     font-family="Arial,Helvetica,sans-serif" font-size="${tagSz}" font-weight="400"
-    fill="rgba(255,255,255,0.88)">${escapeXml(tagline)}</text>
+    fill="${theme.subheadline_color}">${escapeXml(tagline)}</text>
 </svg>`;
 
   const outPath = path.join(outputDir, 'google-play', 'feature-graphic.png');
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
-
-  await sharp(bg)
-    .composite([{ input: Buffer.from(overlay), top: 0, left: 0 }])
-    .png()
-    .toFile(outPath);
-
+  const composites: sharp.OverlayOptions[] = [{ input: Buffer.from(overlay), top: 0, left: 0 }];
+  if (iconLayer) composites.unshift(iconLayer);
+  await sharp(bg).composite(composites).png().toFile(outPath);
   console.log(`  ✓  feature-graphic.png (${width}×${height})`);
+}
+
+// ─── Subcommand: extract theme ────────────────────────────────────────────────
+
+async function runExtractTheme(imagePath: string): Promise<void> {
+  if (!fs.existsSync(imagePath)) {
+    console.error(`✖  Screenshot not found: ${imagePath}`);
+    process.exit(1);
+  }
+  const theme = await extractTheme(imagePath);
+  console.log([
+    `primary_color: "${theme.primaryHex}"`,
+    `secondary_color: "${theme.secondaryHex}"`,
+    `primary_color_name: "${theme.primaryName}"`,
+    `secondary_color_name: "${theme.secondaryName}"`,
+    `# Imagen-safe theme phrase (no hex codes):`,
+    `theme_motif: "Soft gradient wash from ${theme.primaryName} to ${theme.secondaryName}, premium minimalist composition, no text, no numbers, no letters, no words"`,
+  ].join('\n'));
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
+  // Subcommand dispatch
+  const themeFlag = process.argv.indexOf('--extract-theme');
+  if (themeFlag !== -1) {
+    const imgPath = process.argv[themeFlag + 1];
+    if (!imgPath) {
+      console.error('✖  --extract-theme requires a screenshot path');
+      process.exit(1);
+    }
+    await runExtractTheme(imgPath);
+    return;
+  }
+
   const args = parseArgs();
 
-  // Load .env.local from marketing/ (one level up from releases/)
   const envPath = path.join(args.projectRoot, 'marketing', '.env.local');
   dotenv.config({ path: envPath });
 
-  const detected = parseFirstProvider(envPath);
-  if (!detected) {
-    console.error('✖  Set OPENAI_API_KEY or GOOGLE_AI_API_KEY in marketing/.env.local');
-    process.exit(1);
-  }
-  const { provider, apiKey } = detected;
-
   const spec: Spec     = loadYaml(path.join(args.projectRoot, args.specPath));
   const config: StoreConfig = loadYaml(path.join(args.projectRoot, args.configPath));
-  const model = provider === 'openai'
+
+  // ── Decide AI vs CSS background path ────────────────────────────────────
+  // Auto-detect: AI when keys are configured (unless --css-bg overrides).
+  //              CSS when no keys (unless --use-ai-bg insists, which errors).
+  let provider: Provider = 'openai';
+  let apiKey  = '';
+  let model: string;
+  let useAiBg = false;
+
+  if (!args.dryRun) {
+    const detected = pickProvider(envPath, args.providerOverride, config.default_provider);
+    if (args.useAiBgFlag && !detected) {
+      console.error('✖  --use-ai-bg requires OPENAI_API_KEY or GOOGLE_AI_API_KEY in marketing/.env.local');
+      process.exit(1);
+    }
+    if (args.cssBgFlag) {
+      useAiBg = false;
+    } else if (args.useAiBgFlag) {
+      useAiBg = true;
+    } else {
+      // No explicit flag — use AI when keys are present (the user's mental model)
+      useAiBg = !!detected;
+    }
+    if (useAiBg && detected) {
+      provider = detected.provider;
+      apiKey   = detected.apiKey;
+    }
+  }
+  args.useAiBg = useAiBg;
+
+  model = provider === 'openai'
     ? (config.openai?.model ?? 'gpt-image-1')
     : (config.imagen?.model ?? 'imagen-4.0-fast-generate-001');
-  const ssDir = path.join(args.projectRoot, args.screenshotsDir);
+  const quality: OpenAIQuality = config.openai?.quality ?? 'medium';
+
+  const ssDir  = path.join(args.projectRoot, args.screenshotsDir);
   const outDir = path.join(args.projectRoot, args.outputDir);
 
-  const activePlatforms = (Object.keys(PLATFORMS) as Platform[]).filter(p =>
-    args.platforms.includes('all') || args.platforms.includes(p)
-  );
+  // Active platforms.
+  // - --platform a,b,c: explicit list (overrides everything)
+  // - --platform all (default): every default-enabled platform
+  // - --include-<key>: turns on a specific opt-in platform
+  // - --include-all: turns on every opt-in platform
+  const allPlatforms = Object.keys(PLATFORMS) as Platform[];
+  let activePlatforms: Platform[];
+  if (args.platforms.includes('all')) {
+    activePlatforms = allPlatforms.filter(p => PLATFORMS[p].defaultEnabled);
+    // Resolve --include-<key> into platforms
+    const { INCLUDE_FLAG_MAP } = await import('./config.js');
+    const addPlatform = (p: Platform) => {
+      if (!activePlatforms.includes(p)) activePlatforms.push(p);
+    };
+    for (const key of args.includeKeys) {
+      const platforms = INCLUDE_FLAG_MAP[key];
+      if (platforms) platforms.forEach(addPlatform);
+    }
+    if (args.includeAll) {
+      allPlatforms.filter(p => !PLATFORMS[p].defaultEnabled).forEach(addPlatform);
+    }
+  } else {
+    activePlatforms = allPlatforms.filter(p => args.platforms.includes(p));
+  }
+
+  // Locales
+  const locales = args.locales.length > 0 ? args.locales : [DEFAULT_LOCALE];
+
+  // Sets
+  const { count: setCount } = parseSetsArg(args.setsArg);
+  const sets = resolveSets(spec, config, setCount);
+  const setIds = sets.map(s => s.id);
+  const isMatrix = sets.length > 1;
+
+  const cache = new BackgroundCache(args.projectRoot, args.regenIds);
+  const manifestItems: ManifestItem[] = [];
+  // One-shot in-memory cache: a (theme × orientation) renders ONCE per run.
+  const bgBucket = new Map<string, Buffer>();
+  // App-aware AI prompt context, derived from spec.aso + config.app.category.
+  const appContext = buildAppContext(spec, config);
 
   console.log(`\n▶  store-assets  v${spec.version}`);
-  console.log(`   Provider:  ${provider} (${model})`);
+  console.log(`   Sets:      ${setIds.join(', ')}`);
   console.log(`   Platforms: ${activePlatforms.join(', ')}`);
-  console.log(`   Screenshots: ${ssDir}`);
-  console.log(`   Output: ${outDir}\n`);
+  console.log(`   Locales:   ${locales.join(', ')}`);
+  console.log(`   Backgrounds: ${args.useAiBg ? `AI (${provider} ${model})` : 'CSS/SVG'}${args.dryRun ? '  [DRY-RUN]' : ''}`);
+  console.log(`   Output:    ${outDir}\n`);
+
+  // ── Listing markdown ────────────────────────────────────────────────────────
+  if (!args.imagesOnly) {
+    const { warnings, written } = writeStoreListings(spec, config.app.name, outDir, locales, setIds);
+    for (const w of written) console.log(`  ✓  ${path.relative(args.projectRoot, w)}`);
+    for (const w of warnings) {
+      console.log(`  ⚠️  ${w.locale}/${w.store}.${w.field}: ${w.length}/${w.limit} chars (over limit)`);
+    }
+  }
 
   // ── Images ──────────────────────────────────────────────────────────────────
   if (!args.textOnly) {
-    for (const ss of spec.screenshots) {
-      console.log(`\n── ${ss.id}  [${ss.layout}]`);
+    for (const set of sets) {
+      console.log(`\n══ set ${set.id}  (theme: ${set.theme.id} · ${set.theme.bg_style} · frame: ${set.theme.frame})`);
 
-      for (const platform of activePlatforms) {
-        const platformCfg = PLATFORMS[platform];
-        const { width: W, height: H, aspectRatio, outputDir: outSubDir } = platformCfg;
+      for (const ss of spec.screenshots) {
+        const resolved = resolveScreenshot(ss, set);
+        console.log(`\n── ${ss.id}  [${resolved.layout}]`);
 
-        // Resolve screenshot source
-        const sourceFile = ss.sources?.[platform];
-        const screenshotPath = (ss.layout !== 'cta' && sourceFile)
-          ? path.join(ssDir, platform, sourceFile)
-          : null;
+        for (const platform of activePlatforms) {
+          const platformCfg = PLATFORMS[platform];
+          const { outputDir: outSubDir } = platformCfg;
 
-        if (ss.layout !== 'cta' && !screenshotPath) {
-          console.log(`  ⚠️  ${platform}: no source screenshot — skipping`);
-          continue;
+          const screenshotPath = resolveScreenshotPath(ssDir, ss, platform, resolved.layout);
+
+          // Resolve orientation: explicit spec value wins; otherwise auto-detect
+          // from the screenshot's natural aspect (w > h ⇒ landscape).
+          let orientation = ss.orientation;
+          if (!orientation && screenshotPath) {
+            const aspect = await screenshotAspect(screenshotPath);
+            orientation = aspect < 1 ? 'landscape' : 'portrait';
+          }
+          orientation ??= 'portrait';
+
+          // Swap canvas dimensions for landscape. Wear OS is square so it stays
+          // unchanged regardless of orientation; TV banner is already landscape.
+          const isSquareOrAlreadyLandscape =
+            platform === 'wear-os' || platform === 'android-tv-banner' || platformCfg.aspectRatio === '16:9';
+          const W = orientation === 'landscape' && !isSquareOrAlreadyLandscape
+            ? platformCfg.height : platformCfg.width;
+          const H = orientation === 'landscape' && !isSquareOrAlreadyLandscape
+            ? platformCfg.width : platformCfg.height;
+          const aspectRatio = orientation === 'landscape' ? '16:9' : platformCfg.aspectRatio;
+
+          // If the resolved layout is portrait but orientation is landscape
+          // (or vice versa), swap to a slot-appropriate landscape layout.
+          const landscapeLayouts = new Set([
+            'landscape-split', 'landscape-hero', 'landscape-text-only',
+          ]);
+          let effectiveLayout = resolved.layout;
+          if (orientation === 'landscape' && !landscapeLayouts.has(effectiveLayout)) {
+            const slot = ss.slot ?? 'value';
+            effectiveLayout = layoutForSet(slot, sets.indexOf(set), 'landscape');
+          } else if (orientation === 'portrait' && landscapeLayouts.has(effectiveLayout)) {
+            const slot = ss.slot ?? 'value';
+            effectiveLayout = layoutForSet(slot, sets.indexOf(set), 'portrait');
+          }
+          resolved.layout = effectiveLayout;
+          // Special-purpose platforms (Wear OS, TV banner) compose from icon +
+          // text only — they never need a screenshot source regardless of what
+          // the spec's `layout` says.
+          const platformNeedsSource = platform !== 'wear-os' && platform !== 'android-tv-banner';
+          // Otherwise: skip only if the layout actually needs a phone but no
+          // source was found. text-hero and unknown layouts fall through (the
+          // dispatcher's default is text-hero, which works without a source).
+          if (platformNeedsSource && requiresScreenshot(resolved.layout) && !screenshotPath) {
+            console.log(`  ⚠️  ${platform}: no source screenshot — skipping`);
+            continue;
+          }
+          // For dual-phone-overlap, prefer an explicit secondary source. If
+          // none provided, auto-pair with a sibling screenshot's source so the
+          // two phones show different content (the user flagged that two
+          // copies of the same shot doesn't read as variety).
+          let screenshotPathSecondary: string | null = ss.sources_secondary?.[platform]
+            ? path.join(ssDir, platform, ss.sources_secondary[platform]!)
+            : null;
+          if (!screenshotPathSecondary && resolved.layout === 'dual-phone-overlap') {
+            const siblings = spec.screenshots.filter(s => s.id !== ss.id && s.sources?.[platform]);
+            const sibling = siblings[0];
+            if (sibling) {
+              const sp = path.join(ssDir, platform, sibling.sources![platform]!);
+              if (fs.existsSync(sp)) screenshotPathSecondary = sp;
+            }
+          }
+
+          console.log(`  ${platform} (${W}×${H})...`);
+
+          const bgRaw = await acquireBackground({
+            args, cache, set, theme: set.theme,
+            orientation: orientation === 'landscape' ? 'landscape' : orientationFor(aspectRatio),
+            provider, model, apiKey, quality,
+            appContext, bucket: bgBucket,
+          });
+
+          // One render per locale within this (set, screenshot, platform).
+          for (const locale of locales) {
+            const localeOverride =
+              locale === DEFAULT_LOCALE ? null : ss.locales?.[locale] ?? null;
+            const headline    = localeOverride?.headline    ?? resolved.headline;
+            const subheadline = localeOverride?.subheadline ?? resolved.subheadline;
+
+            const layoutInput: LayoutInput = {
+              background: bgRaw,
+              screenshotPath,
+              screenshotPathSecondary,
+              screenshot: {
+                id: ss.id,
+                layout: resolved.layout,
+                headline,
+                subheadline,
+                callout: resolved.callout,
+                features: resolved.features,
+                badge_count: resolved.badge_count,
+                badge_label: resolved.badge_label,
+              },
+              theme: set.theme,
+              config,
+              targetWidth: W,
+              targetHeight: H,
+              projectRoot: args.projectRoot,
+            };
+
+            const rendered = await renderLayout(layoutInput, platform);
+
+            const segments = [
+              locale === DEFAULT_LOCALE ? '' : locale,
+              isMatrix ? `set-${set.id}` : '',
+            ].filter(Boolean);
+            const outPath = path.join(outDir, ...segments, outSubDir, `${ss.id}.png`);
+
+            fs.mkdirSync(path.dirname(outPath), { recursive: true });
+            await sharp(rendered).png().toFile(outPath);
+            console.log(`  ✓  ${path.relative(args.projectRoot, outPath)}`);
+
+            // Record for manifest. Path is relative to the release folder (one
+            // level up from outDir), which is where review.html lives.
+            const releaseDirAbs = path.dirname(outDir);
+            const platformLabel = manifestPlatformLabel(platform);
+            const keyParts = [
+              locale === DEFAULT_LOCALE ? null : locale,
+              set.id,
+              ss.id,
+              platformLabel,
+            ].filter(Boolean) as string[];
+            manifestItems.push({
+              key: keyParts.join('/'),
+              set: set.id,
+              theme: `${set.theme.id} · ${set.theme.bg_style} · ${set.theme.frame}`,
+              screenshot: ss.id,
+              platform: platformLabel,
+              layout: resolved.layout,
+              slot: ss.slot ?? 'value',
+              src: path.relative(releaseDirAbs, outPath),
+              width: W,
+              height: H,
+              orientation,
+            });
+          }
         }
-        if (screenshotPath && !fs.existsSync(screenshotPath)) {
-          console.log(`  ⚠️  ${platform}: file not found ${screenshotPath} — skipping`);
-          continue;
-        }
-
-        console.log(`  ${platform} (${W}×${H})...`);
-
-        const prompt = [ss.imagen_prompt, spec.style?.theme_prompt ?? config.brand.theme_motif]
-          .filter(Boolean).join('. ');
-
-        const bgRaw = await generateBackground(provider, model, apiKey, prompt, aspectRatio);
-
-        const layoutInput: LayoutInput = {
-          background: bgRaw,
-          screenshotPath,
-          spec: ss,
-          style: spec.style,
-          config,
-          targetWidth: W,
-          targetHeight: H,
-        };
-
-        const rendered = await renderLayout(layoutInput, args.projectRoot);
-
-        const outPath = path.join(outDir, outSubDir, `${ss.id}.png`);
-        fs.mkdirSync(path.dirname(outPath), { recursive: true });
-        await sharp(rendered).png().toFile(outPath);
-        console.log(`  ✓  ${path.relative(args.projectRoot, outPath)}`);
-
-        await sleep(1200); // stay within Imagen rate limits
       }
-    }
 
-    // Feature graphic (Google Play only, landscape Imagen call)
-    if (activePlatforms.some(p => p.startsWith('android'))) {
-      console.log('\n── feature-graphic');
-      await buildFeatureGraphic(provider, model, apiKey, spec, config, outDir);
+      // Feature graphic per (set, locale) for Google Play
+      if (activePlatforms.some(p => p.startsWith('android'))) {
+        console.log('\n── feature-graphic');
+        for (const locale of locales) {
+          const segments = [
+            locale === DEFAULT_LOCALE ? '' : locale,
+            isMatrix ? `set-${set.id}` : '',
+          ].filter(Boolean);
+          const localeOutDir = path.join(outDir, ...segments);
+          await buildFeatureGraphic(
+            args, cache, provider, model, apiKey, spec, config, localeOutDir, quality,
+            set.theme, set, bgBucket, appContext,
+          );
+
+          // Record feature graphic in the manifest
+          const releaseDirAbs = path.dirname(outDir);
+          const fgPath = path.join(localeOutDir, 'google-play', 'feature-graphic.png');
+          const keyParts = [
+            locale === DEFAULT_LOCALE ? null : locale,
+            set.id,
+            'feature-graphic',
+          ].filter(Boolean) as string[];
+          manifestItems.push({
+            key: keyParts.join('/'),
+            set: set.id,
+            theme: `${set.theme.id} · ${set.theme.bg_style} · ${set.theme.frame}`,
+            screenshot: 'feature-graphic',
+            platform: 'google-play',
+            layout: 'feature-graphic',
+            slot: 'feature',
+            src: path.relative(releaseDirAbs, fgPath),
+            width: FEATURE_GRAPHIC.width,
+            height: FEATURE_GRAPHIC.height,
+            orientation: 'landscape',
+          });
+        }
+      }
     }
   }
 
-  console.log('\n✅  Done\n');
-  console.log('  google-play/phone/         → Google Play Console → Phone screenshots');
-  console.log('  google-play/tablet/        → Google Play Console → Tablet 10" screenshots');
-  console.log('  google-play/feature-graphic.png → Feature Graphic slot');
-  console.log('  app-store/iphone-6.9/      → App Store Connect → 6.9" iPhone');
-  console.log('  app-store/ipad-pro-12.9/   → App Store Connect → iPad Pro 12.9"');
-  console.log('\n  store-listing.md files written by Claude — check output/ folder.\n');
+  // ── Review page (manifest.json + review.html) ──────────────────────────────
+  // Always written, even with --text-only, --images-only, or --dry-run, so the
+  // user can review whatever was just produced.
+  if (manifestItems.length > 0) {
+    const releaseDir = path.dirname(outDir);
+    const { manifestPath, htmlPath } = writeReviewFiles({
+      version: spec.version,
+      releaseDir,
+      items: manifestItems,
+    });
+    console.log(`\n  ✓  ${path.relative(args.projectRoot, manifestPath)}`);
+    if (htmlPath) console.log(`  ✓  ${path.relative(args.projectRoot, htmlPath)}  ← open this in your browser to review`);
+  }
+
+  // ── Summary ─────────────────────────────────────────────────────────────────
+  const { hits, misses } = cache.stats();
+  console.log('\n✅  Done');
+  if (args.useAiBg && (hits || misses)) {
+    console.log(`   AI cache: ${hits} hits, ${misses} misses`);
+  }
+  if (isMatrix) {
+    console.log(`\n  Each set is in its own subfolder: set-${setIds.join('/, set-')}/`);
+    console.log('  Pick the strongest sets to ship to PPO / Google Play experiments.');
+  }
+  console.log('');
 }
 
 main().catch(err => {
   console.error('\n✖  Error:', err.message ?? err);
   process.exit(1);
 });
+
+void __dirname;

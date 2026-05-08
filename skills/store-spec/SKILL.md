@@ -1,13 +1,41 @@
 ---
 name: store-spec
 description: >
-  Generate or enhance an App Store / Google Play marketing spec (spec.yaml) from
-  screenshots. Analyses screenshots with AI vision, applies ASO best practices,
-  assigns creative layouts, and picks feature callout regions automatically.
-  Run this before /store-assets.
-argument-hint: "[version] [--enhance] [--hints 'your notes']"
+  Generate or enhance an App Store / Google Play marketing spec (spec.yaml).
+  Analyses screenshots with AI vision, applies ASO best practices, and authors
+  an ABCD A/B test matrix — multiple internally-coherent listings varying by
+  layout, theme, frame, and headline framing — that /store-assets renders
+  side-by-side. Run this before /store-assets.
+argument-hint: "[version] [--enhance] [--hints '...'] [--sets N] [--locales en-US,fr-FR,...] [--theme-from-screenshot path]"
 allowed-tools: Read Write Bash Glob
 ---
+
+## Companion skills
+
+This skill is the **orchestrator**. The frameworks and rules it depends on
+live in three companion skills — read them whenever you're authoring copy
+or sizing assets, and cite them when explaining ASO trade-offs:
+
+- **`aso-toolkit`** — content-generation frameworks: keyword research,
+  metadata optimisation (3 variants per field), competitor analysis,
+  audit scorecard. **Use this for every copy field you write.**
+- **`ios-store-requirements`** — App Store Connect screenshot specs,
+  field limits, indexing weights, PPO, CPPs, App Preview specs, 2025/26
+  compliance changes.
+- **`android-store-requirements`** — Google Play Console screenshot
+  specs, feature graphic rules, NLP indexing, store-listing experiments,
+  custom store listings, 2025/26 metadata-policy bans.
+
+Typical citation pattern:
+
+> "Per `aso-toolkit` §2 — Subtitle gets framing-axis variants (secondary
+> keywords / outcome-promise / audience cue). Per `ios-store-requirements`
+> §3, Subtitle is 30 chars and the second-highest weighted field; never
+> repeat words from the App Name."
+
+## Tooling check
+
+!`command -v store-assets-gen >/dev/null 2>&1 && echo "✓ store-assets-gen found on PATH" || echo "⚠️  store-assets-gen not found on PATH — re-install the plugin"`
 
 ## Project config
 
@@ -25,185 +53,275 @@ Arguments: $ARGUMENTS
 
 **Parse the arguments:**
 - First bare value = version (e.g. `1.0.20`). If omitted, use the latest folder in `marketing/releases/`.
-- `--enhance` = re-analyse an existing `spec.yaml`, improve weak copy and fill gaps, but **preserve any manual edits** (especially headlines/subheadlines the user has already written).
-- `--hints "..."` = extra context to factor in (target market, upcoming features, tone, etc.).
+- `--enhance` = re-analyse an existing `spec.yaml`, improve weak copy and fill gaps; **preserve manual edits**.
+- `--hints "..."` = extra context (target market, upcoming features, tone).
+- `--sets N` (default `4`) = how many test sets (A, B, C, D, …) to generate. Each is a complete coherent listing variant.
+- `--locales en-US,fr-FR,de-DE` = generate per-locale store text and per-screenshot translated headlines.
+- `--theme-from-screenshot <path>` = sample base brand colors from a screenshot and use them to derive set themes. Run `store-assets-gen --extract-theme <path>` to get the YAML to splice in.
 
 ---
 
 ### Step 1 — Find screenshots
 
-Use the Bash tool to list the screenshot files in each platform subfolder:
+Use Bash to list the screenshot files in each platform subfolder:
 ```
 marketing/releases/{version}/screenshots/android-phone/
 marketing/releases/{version}/screenshots/android-tablet/
 marketing/releases/{version}/screenshots/ios-phone/
 marketing/releases/{version}/screenshots/ios-tablet/
 ```
-List them sorted (filesystem order = store order). If `--enhance`, also read the existing `spec.yaml`.
+Sort filesystem-order = store-order. If `--enhance`, also read the existing `spec.yaml`.
 
 ---
 
 ### Step 2 — Read and analyse screenshots
 
-Use the Read tool to open each screenshot in `android-phone/` (same features as other platforms, just different size).
+Use the Read tool on each screenshot in `android-phone/` (other platforms are equivalent, different sizes).
 
-For each screenshot identify:
+For each, identify:
 - Which screen of the app is shown
-- The most visually striking UI element (chart, graph, data visualisation, button grid, etc.)
+- The most visually striking UI element (chart, graph, button grid, data viz)
 - The primary user benefit being demonstrated
-- Approximate bounding box of the most interesting element (as fractions: x, y, width, height where 0,0 = top-left)
+- Approximate bounding box of the most interesting region (fractional `x, y, width, height`)
+- Which **story-arc slot** it occupies: `value` (slot 0) → `usage` (slot 1) → `trust` (middle) → `cta` (last)
 
 ---
 
-### Step 3 — Assign layouts
+### Step 3 — Write the base ASO copy
 
-Apply the **Value → Usage → Trust** story arc:
+**Read `aso-toolkit` first.** It carries the keyword-research, metadata-
+optimisation, competitor-analysis, and audit frameworks you'll apply here.
+Generate three framing variants per field internally and pick the
+strongest before writing to the spec — the variants exist to give the
+user PPO / experiment options later.
 
-**4 screenshots (standard):**
-1. First → `split-right`: core value promise — what do I get? Establishes all major features
-2. Second → `feature-callout`: hero feature — how does it work? Best for data visualisation (pie charts, graphs, stats)
-3. Third → `split-left`: differentiation — why this app? Mirrors energy of #2, different feature
-4. Fourth → `cta`: pure brand image — download trigger; no phone screenshot
+Apply the ASO playbook to the **base spec text**: one polished version of
+the App Store / Google Play copy. The same store text is shared across
+all sets within a locale — sets vary visually, not in the listing copy
+itself. (PPO copy variation is a future extension.)
 
-**3 screenshots:**
-1. `split-right`, 2. `feature-callout`, 3. `cta`
+Pipeline (see `aso-toolkit` §1–§5 for the detail):
 
-**5+ screenshots:**
-Alternate `split-right` / `split-left` for middle ones; last = `cta`.
+1. **Research** — derive primary / secondary / long-tail keywords from
+   the spec's `aso.positioning`, `app.category`, and core function.
+2. **Audit competitors** (optional but powerful) — name 3–5 direct
+   competitors, list their primary keywords, find gaps you can fill.
+3. **Generate** — author every text field below. For each, mentally draft
+   3 framing variants (brand-led / function-led / outcome-led; or
+   keyword-led / outcome / audience), pick the strongest.
+4. **Score** — audit each draft against the §4 scorecard. Aim for ≥7/10
+   on every factor before writing to the spec.
+5. **Write to spec** — fill the YAML in §5 of `aso-toolkit`.
 
-**Layout assignment rules:**
-- `feature-callout` requires a clear visually-interesting region to zoom into — only assign it when such a region exists
-- `split-*` works best for navigation, home, list, and input screens
-- `cta` never has a source screenshot — it is a full AI-generated brand image
-- Only use `feature-callout` if the screenshot has distinct data visualisation; otherwise use `split-*`
+#### iOS App Store — quick playbook
 
----
+Field limits and indexing weights live in `ios-store-requirements` Sections
+2–3. The playbook for authoring each iOS field:
 
-### Step 4 — Write store copy (ASO best practices)
+- **App Name (30):** brand + single primary keyword. Highest ranking weight.
+- **Subtitle (30):** secondary keywords; **no word repeats from name** —
+  Apple deduplicates and the repeat wastes your indexing surface.
+- **Keyword Field (100):** comma-separated, **no spaces**; never repeat
+  words from name/subtitle.
+- **Description fold (first 3 lines, ~170 chars):** what the app does, top
+  2–3 differentiators, social proof signal. The remaining 4,000-char body
+  is **not indexed** — pure conversion text.
+- **Promotional Text (170):** time-sensitive, benefit-led; updatable
+  without resubmission.
+- **Screenshot captions:** observed to influence rankings since June 2025
+  but Apple denies OCR indexing — write them as keyword-relevant without
+  stuffing (see `ios-store-requirements` §3 for the unconfirmed-but-likely
+  status).
 
-> **Expert context:** You are writing for an experienced mobile marketer who understands ASO mechanics. Apply all of the following rigorously.
+#### Google Play — quick playbook
 
-#### iOS App Store — field weight hierarchy
+Field limits and NLP indexing rules live in `android-store-requirements`
+Sections 3–4. The playbook for authoring each Play field:
 
-| Field | Limit | Indexed? | Search weight |
-|-------|-------|----------|---------------|
-| App Name | 30 chars | ✓ | Highest |
-| Subtitle | 30 chars | ✓ | High |
-| Screenshot captions | — | ✓ (as of June 2025) | Medium — now a keyword signal |
-| Keyword Field | 100 chars | ✓ | Medium |
-| Description | 4,000 chars | ✗ | Not ranked — conversion only |
-| Promotional Text | 170 chars | ✗ | Not ranked — shown above description |
+- **Title (30):** highest ranking weight. Brand + primary keyword.
+- **Short Description (80):** 2nd-highest weight; shown directly in search
+  results. Must read as one compelling sentence AND carry a keyword.
+- **Full Description (4,000):** fully NLP-indexed. Density ~2–3% for top
+  2–3 keywords; structure hook → bullets → use cases → trust → CTA.
+- **What's New (500/locale):** user-facing only — **not** a primary
+  indexing surface.
+- **Banned in title/icon/developer name** (per Play metadata policy 2025):
+  "free", "best", "top", "#1", "sale", "no ads", "ad free", "download now",
+  "update", emojis, repeated punctuation, ALL CAPS (unless brand). See
+  `android-store-requirements` §9.
 
-**iOS Name (30 chars):** Brand name + single primary keyword. The name carries the most ranking weight of any field. Include the highest-intent keyword users would actually search for, not a marketing tagline.
+#### Universal rules
 
-**iOS Subtitle (30 chars):** Secondary keywords + supporting value proposition. Second-highest ranking weight. Complement the name — do not repeat any word already in the name.
+No "#1" / "best" / unsubstantiated superlatives. Benefit-led, not feature-led. Match copy to what the app actually does. First screenshot caption is the highest-read marketing copy in the listing — make it count.
 
-**iOS Keyword Field (100 chars):** Comma-separated, no spaces after commas. **Never repeat** any word already in the name or subtitle — Apple deduplicates and the repeat wastes space. Target long-tail terms (3+ words), secondary intents, and competitor adjacent terms with lower competition. Long-tail queries convert better because intent is specific.
+**Honesty rule (hard line):** Every claim across every field — headline, subhead, screenshot caption, feature pill, badge, store description — must be verifiable from explicit evidence in the spec, config, or user-provided context. Ask "how do I know this is true?" before each line lands. When in doubt, omit.
 
-**iOS Description:** Only **2–2.5% of product page visitors** ever tap "Read More". The description does not affect search ranking on iOS. Treat it as a conversion tool, not a keyword vehicle.
-- **First 3 lines (the fold, ~170 chars):** This is what ~97% of visitors actually read. Open with the core value proposition. Never open with the app name. Do not waste the fold on filler.
-  - Line 1: What the app does and for whom, in plain language
-  - Line 2: Top 2–3 differentiators or benefit bullets
-  - Line 3: Social proof signal or urgency
-- **Remainder:** Feature bullets, use cases, trust signals. Concise sections with clear headers.
+Hard examples that must NEVER appear without explicit user confirmation:
 
-**iOS Promotional Text (170 chars):** Shown above the description. Updatable without App Store review — use it for time-sensitive messaging (new feature, seasonal offer). Keep it concrete and benefit-led.
+- "No Ads" / "Ad-free" — most free apps run ads; never assume the absence of ads.
+- "Free" — assumes no IAP and no ads. Drop unless verified.
+- "No Sign-up" / "Works offline" / "Private" — never assume; require evidence.
+- "1M+ users" / "Trusted by millions" / "#1 in Finance" / "4.9 stars" — invented social proof.
+- "Award-winning" / "Featured by Apple" / "Voted best of 20XX" — invented accolades.
+- "Doctor-approved", "Banker-approved", "Built by experts" — invented authority.
 
-**Screenshot captions — new keyword signal (iOS, June 2025):** Apple now indexes screenshot overlay text as keyword metadata. Treat headline text on screenshots as a keyword placement opportunity, not just a design choice. Align 2–3 key search terms across screenshot captions naturally — do not keyword-stuff captions.
+When the spec/config doesn't carry the evidence, the right move is **silence on that point**, not a softer version of the same false claim. A shorter listing of true things outperforms a longer listing with one fabrication.
 
-#### Google Play — field weight hierarchy
-
-| Field | Limit | Indexed? | Notes |
-|-------|-------|----------|-------|
-| Title | 30 chars | ✓ | Highest weight |
-| Short Description | 80 chars | ✓ | 2nd highest; shown in search results |
-| Full Description | 4,000 chars | ✓ (NLP indexed) | 2.5–3% keyword density |
-| Developer Name | — | ✓ | Often overlooked |
-
-**Google Play Title (30 chars):** Brand + primary keyword. Highest ranking signal on Google Play.
-
-**Google Play Short Description (80 chars):** Second most important ranking field. Also appears below the title in search results and on the product page — it's the only copy most users read after the title. Must work as both keyword signal AND a compelling single sentence. Google's NLP penalises stuffing — write natural prose with intentional keyword placement.
-
-**Google Play Full Description (4,000 chars):** Google indexes every word using NLP-based semantic indexing. This is the primary keyword vehicle on Android.
-- Recommended keyword density: **2.5–3%** for primary terms
-- Repeat top keywords ~**5×** naturally throughout
-- Structure: hook paragraph → feature bullets → use cases → trust signals → CTA
-- Plain text only (no HTML). Line breaks and emoji bullets improve scannability.
-- Google detects and penalises keyword stuffing — use keywords in meaningful sentences, not lists of terms.
-- Embed long-tail phrases naturally ("monthly repayment calculator", "home loan affordability", etc.)
-
-**Google Play Recent Changes (500 chars):** Keep it specific. Users considering an update will read this — "performance improvements" is meaningless; "faster chart rendering and improved slider sensitivity" is not.
-
-#### Rules for all copy
-
-- No "#1", "best", "leading", or unsubstantiated superlatives
-- Benefit-led, not feature-led: "See your total interest before you commit" not "Has an interest calculator"
-- Users decide in 3–6 seconds — every word must earn its place
-- Match copy exactly to what the app actually does — never oversell
-- First screenshot caption is the highest-read marketing copy in the listing — make it count
+**Don't restate the app name on screenshot text.** The store already shows the name next to every image — repeating it is wasted pixels.
 
 ---
 
-### Step 5 — Assign screenshot headlines and subheadlines
+### Step 4 — Write base screenshot records
 
-**Critical iOS fact:** On iOS, portrait screenshots show **3 screenshots in search results**. Landscape shows only **1**. This is why portrait is non-negotiable for iPhone — it triples your search impression surface. 96% of top iOS apps use portrait for iPhone screenshots.
+For each screenshot, populate the *base* values (used as fallback when a set doesn't override):
 
-**Screenshot 1 (highest leverage):** On iOS, this is a standalone ad unit in search results. On Android, the feature graphic plays this role. Write the headline for screenshot 1 as if it is the only text the user will read — it often is.
-
-**Headline guidelines:**
-- Max ~5 words — bold, scannable at a glance (~1 second reading time)
-- Benefit-led, specific, concrete ("See Every Dollar" not "Interest Calculator")
-- Action or outcome framing outperforms feature naming
-- Align with the primary keyword for that screen (screenshot caption text is now an iOS keyword signal)
-
-**Subheadline guidelines:**
-- Max ~10 words — supports and expands the headline
-- Complete the thought the headline started
-- Do not repeat the headline — add context or a second benefit
-
----
-
-### Step 6 — Generate Imagen background prompts
-
-**Critical rule:** Never include hex color codes (e.g. `#99E0DB`) in Imagen prompts — Imagen will render them as visible text in the image. Always describe colors by name.
-
-Create a **shared visual theme** across all screenshots so they look like a cohesive set:
-- All prompts draw from the same color family (use the names of `primary_color` and `secondary_color` from config — e.g. "deep ocean teal", "bright aqua", "pale mint")
-- All prompts share the brand motif (from `brand.theme_motif` in config)
-- Each prompt varies composition to suit its layout and subject
-
-**Proven Imagen prompt structure:**
-```
-[style] [lighting] of [subject/motif] on [background descriptor], [composition directive], [mood/color], no text, no numbers, no letters, no words
+```yaml
+screenshots:
+  - id: home
+    slot: value                  # explicit story-arc slot (overrides position-inferred)
+    layout: split-right          # base/default layout
+    headline: ""                 # ~5 words, benefit-led
+    subheadline: ""              # ~10 words
+    sources:
+      android-phone: "01-home.png"
+      android-tablet: "01-home.png"
+      ios-phone: "01-home.png"
+      ios-tablet: "01-home.png"
+    callout: null                # only required when a set uses feature-callout layout for this screenshot
 ```
 
-**Negative prompts:** Always end every prompt with `no text, no numbers, no letters, no words`. Use descriptive terms for what to avoid — this is more effective than `"do not include"` phrasing.
+Layouts available per slot (sets rotate through these in order):
 
-**Composition control for text overlay space:**
-- `split-*` layouts: text fills the top ~30% of canvas — use prompts with "open upper zone", "clear top third", or "subject in lower two-thirds"
-- `feature-callout` layouts: text sits at top and bottom — keep middle clear
-- `cta` layout: no phone competes for attention — use a richer, more dramatic composition with "wide open composition", "bokeh background", "radial light bloom from center"
-- `hero-center` layouts: text overlaid center — use prompts with "diffuse central lighting", "uncluttered background"
+| Slot | Layouts (preference order) |
+|------|----------------------------|
+| `value` | `uppercase-top`, `logo-tilted`, `highlight-pill`, `caption-below` |
+| `usage` | `caption-below`, `card-tilted`, `dual-phone-overlap`, `side-list` |
+| `trust` | `side-list`, `dual-phone-overlap`, `caption-below`, `highlight-pill` |
+| `cta`   | `text-hero` (the only no-phone layout) |
 
-**Styles that produce clean composable backgrounds:**
-- `Soft gradient wash`, `studio product photography`, `minimal flat color field`, `aerial abstract`
-- Avoid: `"neon"`, `"billboard"`, `"poster"`, `"signage"` — these semantically invite text rendering
+Layout descriptions:
+- **`text-hero`** — no phone. Massive bold left-aligned headline (4 lines), subhead, optional trust badge (`badge_count` + `badge_label`). Used for the closing CTA slot. Set `sources: {}`.
+- **`caption-below`** — phone fills the upper canvas; brand mark + 3-line centered caption beneath. Calm/premium feel.
+- **`uppercase-top`** — bold ALL-CAPS headline at top (~2 lines), phone fills bottom and may bleed off-canvas. Strong opener.
+- **`logo-tilted`** — brand logo + multi-line uppercase headline top-left, tilted phone bottom-right partially visible.
+- **`highlight-pill`** — mixed-weight headline with a bright pill behind a `[bracketed]` keyword. Phone tilted slightly. Conversational tone.
+- **`side-list`** — vertical pill list down the left edge (reads from `features:`), phone right side. Strong for "many features" framing.
+- **`card-tilted`** — white rounded card with caption + trust badge in upper area, tilted phone overlapping the card corner, faded watermark text behind.
+- **`dual-phone-overlap`** — two phones at slight opposing rotations, overlapping. Pill-highlighted headline above. Optional `sources_secondary:` for a different second screenshot.
 
-**Lighting specificity matters:** `"diffused studio light"`, `"soft natural window light"`, `"bokeh depth of field"` produce controllable results. `"dramatic"` or `"cinematic neon"` tends to produce text artifacts.
+Special headline syntax for `highlight-pill` and `dual-phone-overlap`:
+```yaml
+headline: "Quickly [FIND FEEDS] that match your interests"
+```
+The `[FIND FEEDS]` segment renders as a bright pill-highlighted run. Other layouts strip the brackets and render the rest as plain text — so the same headline works in every layout.
 
-**CTA layout prompt (richer):** Since the CTA has no phone, use a premium, environmental composition: `"Wide panoramic shot of [motif], radial light bloom from center, deep [brand_color] at edges transitioning to bright [brand_color_2] at center, bokeh abstract depth, premium brand feel, wide open composition, no text, no numbers, no letters"`
+**For `text-hero`:** Populate `features:` with short claims about the app — these render as inline pills. **EVERY pill must be verifiable from explicit evidence in the spec or config.** When in doubt, leave the array empty. An empty pill area looks better than a wrong claim.
+
+#### Claim verification rule (hard line)
+
+Before adding ANY feature pill, badge, or copy assertion, you must point to where the evidence comes from. Ask yourself: "How do I know this is true?"
+
+| Type of claim | Evidence required |
+|---------------|-------------------|
+| "Free" / "Free to use" | App is genuinely free with no in-app purchases AND no ads. If either is present, drop this. |
+| "No Ads" / "Ad-free" | Spec/config explicitly says ads are disabled. Most "free" apps DO have ads — assume ads are present unless told otherwise. |
+| "No Sign-up" / "No Account" | Spec/config explicitly states the app works without registration. Don't assume. |
+| "Offline" / "Works offline" | Spec/config explicitly mentions offline support OR the app's primary functions don't require network. |
+| "Private" / "100% Private" | Spec/config mentions privacy posture (no analytics, no third-party SDKs, etc). Vague. Avoid unless the user has stated it. |
+| "Built for iPhone & iPad" | Both platforms are listed in `app.platforms` AND iOS sources exist for both phone and tablet. Verifiable from the spec. |
+| Numbers (users, ratings, downloads) | The user has provided the number directly. Never round or invent. |
+
+**Default to omission.** If you can't tie a pill to one of the rows above with evidence, drop it. A short pill row of two truthful claims beats a longer row with one false claim.
+
+**Anti-patterns (never include without explicit user confirmation):**
+- "No Ads" when the app monetises (ads are the silent default for free apps)
+- "Trusted by millions" / "#1 in Finance" — superlatives without measurement
+- "5-star rated" / "⭐ 4.9" without a real rating from the user
+- "Used by experts" / "Banker-approved" — appeals to authority with no source
+
+**For real, verifiable** badge data (e.g. genuine review count the user shared, real award), set `badge_count` + `badge_label` and note in your summary which fact the user verified before publishing.
+
+Leave `sources: {}` for `text-hero` — it's the no-phone CTA closer.
+
+**For `side-list`:** populate `features: ["World News", "Movies & TV", ...]` (up to 8). The list renders as pills down the left edge.
+
+**For `dual-phone-overlap`:** optionally provide `sources_secondary:` with per-platform paths to show two different screens. If omitted, the primary screenshot is used twice.
 
 ---
 
-### Step 7 — Write spec.yaml
+### Step 5 — Author the test matrix (`sets:`)
 
-Write the completed spec to `marketing/releases/{version}/spec.yaml`.
+Generate **N internally-coherent sets** (default 4: A, B, C, D). Each set is a **complete, shippable listing variant** — preserve the Value → Usage → Trust → CTA story arc within each set.
 
-Use this exact YAML structure:
+For each set, write:
+
+1. A **theme**: palette derivation from the base brand colors, background style, frame, scrim.
+2. **Per-screenshot overrides**: the layout that set uses for each screenshot, and an alternate **headline framing** (the subheadline expands it).
+
+#### Theme presets to rotate through (in order)
+
+| # | id                  | hue shift | sat shift | light shift | bg style    | frame         | scrim |
+|---|---------------------|-----------|-----------|-------------|-------------|---------------|-------|
+| 0 | brand-primary       |   0°      |   0       |    0        | gradient    | white-border  | 0.65  |
+| 1 | warm-shift          | +20°      | +0.05     | +0.02       | mesh        | none          | 0.55  |
+| 2 | cool-shift          | −20°      | +0.05     | −0.02       | bokeh       | white-border  | 0.45  |
+| 3 | monochrome-accent   |   0°      | −0.50     |    0        | geometric   | none          | 0.70  |
+| 4 | high-contrast       |   0°      | +0.20     | −0.05       | minimal     | white-border  | 0.65  |
+| 5 | muted               | +10°      | −0.25     | +0.05       | gradient    | none          | 0.55  |
+| 6 | inverted            | +180°     |   0       |    0        | mesh        | white-border  | 0.45  |
+| 7 | soft-pastel         | +30°      | −0.30     | +0.15       | bokeh       | none          | 0.70  |
+
+When N > 8, continue rotating hue by +45° from preset 0.
+
+#### Headline framing modes (rotate through across sets)
+
+| #   | framing            | example                          |
+|-----|--------------------|----------------------------------|
+| 0   | benefit            | "See every dollar"               |
+| 1   | outcome            | "Save $400 a month"              |
+| 2   | social proof       | "Trusted by 50,000 users"        |
+| 3   | curiosity          | "Where did your money go?"       |
+| 4   | comparison         | "Less spreadsheet, more living"  |
+| 5   | urgency / time     | "30 seconds to set up"           |
+| 6   | identity           | "Built for busy parents"         |
+| 7   | promise            | "Money clarity, every Friday"    |
+
+For set `A` use framing 0 across all screenshots, set `B` framing 1, etc. The whole set should feel like a single voice — don't mix framings within a set.
+
+#### Layout rotation per slot
+
+For set `i`, slot `s`: pick `VALID_LAYOUTS[s][i % len(VALID_LAYOUTS[s])]`. The CLI does this automatically when no override is provided, but writing it explicitly in the spec lets the user edit per-set choices.
+
+---
+
+### Step 6 — If `--theme-from-screenshot` was passed
+
+Run:
+```bash
+store-assets-gen --extract-theme path/to/screenshot.png
+```
+
+Use the printed `primary_color` / `secondary_color` to update `brand.primary_color` / `brand.secondary_color` in `marketing/.store-config.yaml`. The set themes (Step 5) automatically derive from these.
+
+---
+
+### Step 7 — If `--locales` was passed
+
+For each non-default locale (e.g. `fr-FR`, `de-DE`):
+- Translate the base `google_play` and `app_store` blocks → `locales: { fr-FR: { google_play: …, app_store: … } }`
+- Translate per-screenshot `headline` / `subheadline` → each screenshot gets `locales: { fr-FR: { headline, subheadline } }`
+
+Apply ASO rules per locale (limits, no superlatives, local search terms — direct translation often misses intent).
+
+---
+
+### Step 8 — Write spec.yaml
+
+Write to `marketing/releases/{version}/spec.yaml` using this structure:
 
 ```yaml
 # ─── Store Marketing Spec ─────────────────────────────────────────────────────
-# Generated by /store-spec on {date}. Edit freely — /store-assets reads this file.
+# Generated by /store-spec on {date}. Edit freely — /store-assets reads this.
 # Re-run with --enhance to improve copy without overwriting your edits.
 
 version: "{version}"
@@ -211,85 +329,117 @@ generated: "{date}"
 
 # ── ASO strategy ──────────────────────────────────────────────────────────────
 aso:
-  primary_keywords:
-    - keyword one
-    - keyword two
-  secondary_keywords:
-    - keyword three
-  target_audience: "{from config or inferred}"
-  positioning: "{one sentence unique angle}"
+  primary_keywords: [keyword one, keyword two]
+  secondary_keywords: [keyword three]
+  positioning: "{one sentence}"
 
 # ── Google Play text ──────────────────────────────────────────────────────────
 google_play:
-  title: ""                   # max 30 chars
-  short_description: ""       # max 80 chars
-  full_description: |         # max 4000 chars; 2.5-3% keyword density; ~5x primary keywords
+  title: ""                   # max 30
+  short_description: ""       # max 80
+  full_description: |         # max 4000
     ...
-  recent_changes: ""          # max 500 chars; specific, not generic
+  recent_changes: ""          # max 500
 
 # ── App Store text ────────────────────────────────────────────────────────────
 app_store:
-  name: ""                    # max 30 chars; brand + primary keyword; highest ranking weight
-  subtitle: ""                # max 30 chars; secondary keywords; no word repeats from name
-  description: |              # max 4000 chars; first 3 lines = the fold (~97% of users stop here)
+  name: ""                    # max 30
+  subtitle: ""                # max 30
+  description: |              # max 4000
     ...
-  keywords: ""                # max 100 chars; comma-separated, no spaces; no repeats from name/subtitle
-  promotional_text: ""        # max 170 chars; updatable without review; benefit-led
+  keywords: ""                # max 100
+  promotional_text: ""        # max 170
 
-# ── Screenshots ───────────────────────────────────────────────────────────────
-# Story arc: Value (screenshot 1) → Usage (screenshot 2) → Trust (screenshot 3) → CTA
-# iOS portrait = 3 screenshots shown in search results; landscape = 1. Default to portrait.
-# Screenshot captions are now indexed as keywords on iOS (June 2025) — align with search terms.
-# Reorder or remove entries to control store ordering.
-
+# ── Screenshots (base / fallback) ─────────────────────────────────────────────
 screenshots:
   - id: home
-    layout: split-right        # hero-center | split-right | split-left | feature-callout | cta
-    headline: ""               # ~5 words max — bold, benefit-led, scannable at 1 second
-    subheadline: ""            # ~10 words max — expands headline, adds second benefit
-    imagen_prompt: ""          # unique background prompt; no hex codes; end with: no text, no numbers, no letters
-    callout: null              # only for feature-callout layout (see below)
+    slot: value
+    layout: uppercase-top              # base/default; sets may override per ABCD
+    headline: "TRACK YOUR MONEY"
+    subheadline: "Base supporting line"
     sources:
-      android-phone:  "filename.png"
-      android-tablet: "filename.png"
-      ios-phone:      "filename.png"
-      ios-tablet:     "filename.png"
+      android-phone:  "01-home.png"
+      android-tablet: "01-home.png"
+      ios-phone:      "01-home.png"
+      ios-tablet:     "01-home.png"
 
-  # feature-callout example:
-  # - id: chart-feature
-  #   layout: feature-callout
-  #   callout:
-  #     x: 0.05       # fraction of screenshot width from left
-  #     y: 0.18       # fraction of screenshot height from top
-  #     width: 0.90   # fraction of screenshot width
-  #     height: 0.42  # fraction of screenshot height
+  # ... usage, trust screenshots ...
 
   - id: cta
-    layout: cta
-    headline: ""               # app name or top-line value promise
-    subheadline: ""            # strongest trust signal or differentiator
-    features:
-      - "Feature One"
-      - "Feature Two"
-      - "Feature Three"
-    imagen_prompt: ""          # richer/more dramatic; radial or bokeh composition; no text, no numbers, no letters
-    sources: {}                # no screenshot needed for cta layout
+    slot: cta
+    layout: text-hero                  # the no-phone closer
+    headline: "Money clarity, every Friday"
+    subheadline: "Track, plan, and save without the spreadsheet."
+    # Feature pills MUST be verifiable. See "Honesty rule" above. Common safe
+    # claims: ["Free", "No Sign-up", "Offline"] — but only when each is true.
+    # Default to fewer-true-claims over more-plausible-but-unverified.
+    features: []
+    # badge_count / badge_label only when a real, user-supplied number exists
+    sources: {}
 
-# ── Visual style ──────────────────────────────────────────────────────────────
-style:
-  theme_prompt: ""             # shared motif injected into every imagen_prompt; no hex codes
-  device_frame: white-border   # white-border | none
-  headline_color: "#FFFFFF"
-  subheadline_color: "rgba(255,255,255,0.88)"
-  accent_color: "{primary_color from config}"
+# ── Test matrix ───────────────────────────────────────────────────────────────
+# N internally-coherent sets. Each set ships as a complete listing variant.
+sets:
+  - id: A
+    theme:
+      id: brand-primary
+      palette_name: "{primary_name} + {secondary_name}"
+      primary:   "#3B7AC1"
+      secondary: "#F2A93B"
+      accent:    "#3B7AC1"
+      bg_from:   "#1F4A78"
+      bg_to:     "#D9961C"
+      bg_style:  gradient
+      frame:     white-border
+      scrim:     0.65
+      phone_top_offset: 0.30
+      headline_color:    "#FFFFFF"
+      subheadline_color: "rgba(255,255,255,0.88)"
+    screenshots:
+      home:
+        layout: split-right
+        headline: "See every dollar"
+        subheadline: "A clear picture of your spending, every day"
+      # ... usage, trust, cta ...
+
+  - id: B
+    theme:
+      id: warm-shift
+      # ... full theme block ...
+    screenshots:
+      home:
+        layout: hero-center
+        headline: "Save $400 a month"
+        subheadline: "Real savings, no spreadsheet, no guilt"
+      # ...
+
+  - id: C
+    # ...
+
+  - id: D
+    # ...
+
+# ── Locales (only when --locales was used) ────────────────────────────────────
+# locales:
+#   fr-FR:
+#     google_play: { ... }
+#     app_store:   { ... }
 ```
 
-**After writing the file**, print a summary showing:
-- Version and output path
-- Number of screenshots and their assigned layouts
-- Any character limit warnings
-- Keyword field: flag any words repeated between name/subtitle/keywords
-- Next step: "Review and edit `spec.yaml`, then run `/store-assets {version}`"
+---
+
+### Step 9 — After writing
+
+Print:
+- Version, output path, set count, locale count
+- Any character-limit warnings on copy
+- Total render plan: `N sets × M platforms × L locales × K screenshots = X images`
+- Next step: `Review and edit spec.yaml, then run /store-assets {version}`
+
+If sample renders would help the user pick a winner, suggest:
+```bash
+/store-assets {version} --dry-run    # preview all sets in seconds, no API cost
+```
 
 ---
 
@@ -297,18 +447,134 @@ style:
 
 | Metric | Value |
 |--------|-------|
-| iOS search: portrait screenshots shown | 3 |
-| iOS search: landscape screenshots shown | 1 |
-| Users who expand App Store "Read More" | ~2–2.5% |
-| Top iOS apps using portrait screenshots | 96% |
-| Screenshot CVR lift (optimised vs baseline) | 20–35% |
-| Google Play: text overlay max coverage | 20% of image area |
-| Google Play: full description keyword density | 2.5–3% |
-| Google Play: repeat primary keywords naturally | ~5× |
-| iOS screenshot caption indexing (keyword signal) | Since June 2025 |
-| Keyword boost from caption alignment (iOS) | up to 22% |
-| Apple PPO: max test variants | 3 |
-| Apple PPO: testable assets | icon, screenshots, preview video only |
-| Apple PPO: max test duration | 90 days |
-| Feature graphic dimensions | 1024×500px |
-| Feature graphic: keep center clear for | video play button overlay |
+| iOS portrait screenshots in search | 3 |
+| iOS landscape in search | 1 |
+| App Store "Read More" expansion rate | ~2–2.5% |
+| Top iOS apps using portrait | 96% |
+| Optimised screenshot CVR lift | 20–35% |
+| Google Play description keyword density | 2.5–3% |
+| iOS caption indexing (keyword signal) | Observed since June 2025 (Apple denies OCR — see ios skill §3) |
+| Apple PPO max test variants | 3 (over original) |
+| Apple PPO max test duration | 90 days |
+| Apple Custom Product Pages limit | 70 per app (raised Oct 2025) |
+| Google Play feature graphic | 1024×500 px |
+| Google Play store-listing experiments | 5 localised + 1 default concurrent |
+| Google Play Custom Store Listings | 50 per app (100 for partners) |
+
+For the canonical, source-cited numbers, defer to:
+- `ios-store-requirements` for iOS specifics
+- `android-store-requirements` for Android specifics
+
+---
+
+## Appendix — design decisions captured from production feedback
+
+This section records architectural / content rules established through
+real-world use. Read it before authoring; don't re-litigate these.
+
+### Layout system
+
+- **8 layouts only**, mapped to story-arc slots via the matrix planner:
+  - `value`: `uppercase-top` → `logo-tilted` → `highlight-pill` → `caption-below`
+  - `usage`: `caption-below` → `card-tilted` → `dual-phone-overlap` → `side-list`
+  - `trust`: `side-list` → `dual-phone-overlap` → `caption-below` → `highlight-pill`
+  - `cta`:   `text-hero` (the only no-phone closer)
+- Each set rotates layouts within a slot — set A uses index 0, set B uses
+  index 1, etc, wrapping when N exceeds the list.
+- Legacy layout names (`cta`, `hero-center`, `split-right`, `split-left`,
+  `feature-callout`) are auto-migrated by the matrix planner; they no
+  longer exist in the renderer.
+
+### Screenshot is the source of truth for phone size and aspect
+
+- Every layout that draws a phone reads `sharp.metadata()` on the source
+  screenshot and derives the device frame's height as
+  `phoneW * (height/width)`. No layout uses a hardcoded ratio.
+- iPad sources render with iPad-shaped frames; iPhone sources iPhone-shaped.
+- Mismatched aspect (e.g. iPhone source rendered into an iPad canvas) is
+  the user's choice — the layout never stretches or clips the screenshot.
+
+### One background per (theme × orientation)
+
+- The matrix uses **8 unique backgrounds total** (4 themes × 2 orientations
+  — portrait + landscape), reused across every platform via sharp's
+  `cover + centre` resize.
+- AI runs make 8 API calls for the entire matrix, not 80.
+- In-memory bucket cache + disk cache (`marketing/.cache/backgrounds/`)
+  skip regeneration on subsequent runs.
+
+### AI background defaults
+
+- When `OPENAI_API_KEY` or `GOOGLE_AI_API_KEY` is present in
+  `marketing/.env.local`, AI backgrounds are used **by default**. CSS/SVG
+  is the explicit fallback (`--css-bg`).
+- Prompts bias toward graphic / illustrative output ("flat vector
+  illustration style, abstract graphic design, no photograph") and weave
+  in app context derived from `spec.aso.primary_keywords`,
+  `spec.aso.positioning`, and `config.app.category`.
+- Every prompt ends with a text-safe directive: "open uncluttered space at
+  the top and bottom for headline text overlay, visual interest
+  concentrated in the centre".
+
+### Visual hierarchy fixes applied during production review
+
+- **App-name wordmarks removed** from every layout (`uppercase-top`,
+  `caption-below`, `logo-tilted`, `card-tilted`). The store already shows
+  the app name next to every screenshot — repeating it is wasted pixels.
+- **Subhead sizes bumped**: `uppercase-top` 0.040 → 0.050; `caption-below`
+  factor 0.55 → 0.62; `logo-tilted` 0.045 → 0.050; `highlight-pill` /
+  `side-list` / `dual-phone-overlap` 0.040 → 0.048; with comfortable gap
+  (H × 0.038) between headline and subhead.
+- **Subheads always wrap and `fitText`** so long copy never clips the
+  canvas edge.
+- **Headline `charRatio` 0.68** for ALL-CAPS bold layouts (was 0.62 — too
+  optimistic for wide bold caps).
+- **Side-list subhead** anchors to `max(phone-bottom, list-bottom) + gap`,
+  not absolute `H × 0.95`.
+- **Card-tilted** auto-sizes the card to content height (was fixed
+  `H × 0.34` with huge negative space). Trust badge only renders when
+  `badge_count` is explicitly authored.
+- **Highlight-pill / dual-phone-overlap**: bracketed `[KEYWORDS]` render
+  as bold accent-coloured text, **no background pill** (the coloured
+  block was too heavy).
+- **Adaptive text colour**: `pickTextColorsForGradient()` in `colors.ts`
+  computes WCAG luminance on the gradient midpoint and chooses
+  white-on-dark or dark-on-light per theme. `ensureAccentContrast()`
+  iteratively adjusts the accent until 4.5:1 against the background.
+- **Text-shadow halo**: every overlay SVG includes a `<style>` block
+  applying `paint-order: stroke fill; stroke: rgba(0,0,0,0.45)` so each
+  glyph has a subtle dark halo. Insurance for borderline contrast cases.
+- **Device frame slimmed**: bezel ~1.8% of phone width (was 4%). Always
+  shown — `frame: 'none'` no longer produces a frameless render. Camera
+  pill smaller and darker for a marketing-mockup feel.
+- **Feature graphic** now includes the app icon (62% of canvas height,
+  rounded square) on the left, app name + subtitle on the right. No
+  scrim — the theme background carries contrast on its own.
+- **Text-hero**: icon centred at top, `W * 0.24` (was 0.18). Star/review-
+  count badge removed. Optional honest "feature pill" row only renders
+  when `screenshot.features` is populated.
+- **Dual-phone variety**: the planner auto-pairs a sibling screenshot's
+  source for the secondary phone when `sources_secondary` isn't authored
+  — two duplicate phones don't read as variety.
+
+### Content honesty (hard line, recap)
+
+- Every claim across every field must be verifiable from explicit evidence.
+- Default to omission. A shorter listing of true things outperforms a
+  longer listing with one fabrication.
+- "No Ads" in particular: never assume; most free apps run ads. Only
+  include if the user has explicitly stated ads are absent.
+- See the "Honesty rule" section above for the full table of common
+  claims and the evidence each requires.
+
+### Review workflow
+
+- `/store-assets` always emits `marketing/releases/{version}/manifest.json`
+  + `marketing/releases/{version}/review.html` alongside the output.
+- The review page is self-contained (manifest is inlined as a JS literal,
+  no fetch — works on `file://`).
+- Per-image vote + comment + global comment, persisted to localStorage,
+  exportable as `reviews.json`. Filter by platform/set/status; group by
+  set, screenshot, layout, device family, platform, or flat.
+- Aspect ratios in the preview thumbnails match each platform's actual
+  canvas (1320/2868 iPhone, 2048/2732 iPad, 1440/2880 Android phone, etc).
