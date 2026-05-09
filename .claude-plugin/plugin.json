@@ -6,13 +6,8 @@
     "name": "David Broadhurst"
   },
   "homepage": "https://github.com/dbroadhurst/mobile-store-assets",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/dbroadhurst/mobile-store-assets.git"
-  },
-  "bugs": {
-    "url": "https://github.com/dbroadhurst/mobile-store-assets/issues"
-  },
+  "repository": "https://github.com/dbroadhurst/mobile-store-assets",
+  "license": "MIT",
   "keywords": [
     "claude-code",
     "claude-plugin",
@@ -26,6 +21,5 @@
     "store-listing",
     "ppo",
     "feature-graphic"
-  ],
-  "license": "MIT"
+  ]
 }
