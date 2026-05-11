@@ -24,7 +24,7 @@ import {
   type Provider,
   type OpenAIQuality,
 } from './gemini.js';
-import { resizeBg, escapeXml, fitText, screenshotAspect } from './helpers.js';
+import { resizeBg, escapeXml, fitText, screenshotAspect, makeDeviceFrame, stripBrackets, TEXT_SHADOW_DEFS } from './helpers.js';
 import { layoutForSet } from './story-arc.js';
 import { textHero } from './layouts/text-hero.js';
 import { captionBelow } from './layouts/caption-below.js';
@@ -455,68 +455,150 @@ async function buildFeatureGraphic(
   const { width, height } = FEATURE_GRAPHIC;
   console.log('  Generating feature graphic...');
 
-  // Reuse the landscape background generated for this theme. The feature
-  // graphic shares its (theme × orientation) bucket with anything else that
-  // happens to use 16:9 — keeps the matrix at 8 unique backgrounds total.
+  // Reuse the landscape background generated for this theme.
   const bgRaw = await acquireBackground({
     args, cache, set, theme,
     orientation: 'landscape',
     provider, model, apiKey, quality,
     appContext, bucket,
   });
-
   const bg = await resizeBg(bgRaw, width, height);
-  const appName = config.app.name;
-  const tagline = spec.app_store.subtitle ?? spec.app_store.promotional_text ?? '';
 
-  // ── App icon (left side, large, vertically centred) ────────────────────────
-  const iconSize = Math.floor(height * 0.62);
-  const iconLeft = Math.floor(width * 0.04);
-  const iconTop  = Math.floor((height - iconSize) / 2);
-  const iconAbs  = path.isAbsolute(config.app.icon)
-    ? config.app.icon
-    : path.join(args.projectRoot, config.app.icon);
-  let iconLayer: { input: Buffer; top: number; left: number } | null = null;
-  if (fs.existsSync(iconAbs)) {
-    const iconRaw = await sharp(iconAbs).resize(iconSize, iconSize, { fit: 'cover' }).png().toBuffer();
-    // Round corners (square icon → rounded square) for a softer feel
-    const radius = Math.floor(iconSize * 0.22);
-    const mask = Buffer.from(
-      `<svg width="${iconSize}" height="${iconSize}"><rect width="${iconSize}" height="${iconSize}" rx="${radius}" ry="${radius}" fill="white"/></svg>`
-    );
-    const iconBuf = await sharp(iconRaw).ensureAlpha()
-      .composite([{ input: mask, blend: 'dest-in' }]).png().toBuffer();
-    iconLayer = { input: iconBuf, top: iconTop, left: iconLeft };
+  // ── Best-practice rules baked into the layout ──────────────────────────────
+  // • Lead with a benefit headline (5–8 words). NOT the app name — Play shows
+  //   the app name adjacent to the graphic, so repeating it is wasted pixels
+  //   and Google flags icon-style branding as duplication.
+  // • Featured screenshot (slot 0 / "value") as the visual focal point on the
+  //   right, slightly tilted for energy. Tells the category in < 1 second.
+  // • 70 px safe margins on every edge (crop zones differ per surface).
+  // • Centre kept reasonably clear so a future promo-video play-button overlay
+  //   doesn't obscure critical content.
+  // • Theme background + accent + text-shadow halo for thumbnail legibility.
+  //   Sources: Apptamin, Gummicube, ScreenshotWhale ASO best-practice guides.
+  const SAFE = 70;
+
+  // Pick the strongest copy: first screenshot's headline (value slot is
+  // authored as the listing's hero promise). Fall back through app_store text.
+  const valueSs = spec.screenshots[0];
+  const valueOverride = valueSs ? set.screenshots[valueSs.id] : undefined;
+  const promoHeadline =
+    valueOverride?.headline ??
+    valueSs?.headline ??
+    spec.app_store.promotional_text ??
+    spec.app_store.subtitle ??
+    config.app.name;
+  const headline = stripBrackets(promoHeadline);
+  const subline  = spec.app_store.subtitle && spec.app_store.subtitle !== headline
+    ? spec.app_store.subtitle
+    : (spec.app_store.promotional_text && spec.app_store.promotional_text !== headline
+        ? spec.app_store.promotional_text
+        : '');
+
+  // Resolve a featured screenshot. Prefer android-phone (this is a Play asset);
+  // fall back through ios-phone / other landscape variants for landscape apps.
+  const ssDir = path.join(args.projectRoot, args.screenshotsDir);
+  const sourcePicks: Array<{ platform: string; folder: string }> = [
+    { platform: 'android-phone',  folder: 'android-phone'  },
+    { platform: 'ios-phone',      folder: 'ios-phone'      },
+    { platform: 'android-tablet', folder: 'android-tablet' },
+    { platform: 'ios-tablet',     folder: 'ios-tablet'     },
+  ];
+  let phonePath: string | null = null;
+  for (const pick of sourcePicks) {
+    const file = valueSs?.sources?.[pick.platform as Platform];
+    if (!file) continue;
+    const abs = path.join(ssDir, pick.folder, file);
+    if (fs.existsSync(abs)) { phonePath = abs; break; }
   }
 
-  // ── Text block (right of icon, vertically stacked) ─────────────────────────
-  const textLeft = iconLayer
-    ? iconLeft + iconSize + Math.floor(width * 0.04)
-    : Math.floor(width * 0.06);
-  const safe   = width - textLeft - Math.floor(width * 0.05);
-  const nameSz = fitText(appName, safe, Math.floor(height * 0.30), 0.60);
-  const tagSz  = fitText(tagline, safe, Math.floor(height * 0.13), 0.54);
-  const blockH = nameSz + Math.floor(height * 0.04) + tagSz;
-  const nameY  = Math.floor((height - blockH) / 2) + Math.floor(nameSz * 0.85);
-  const taglineY = nameY + Math.floor(height * 0.04) + tagSz;
+  // ── Layout ────────────────────────────────────────────────────────────────
+  // Left column: headline + optional sub-line, left-aligned, vertically
+  // centred. Right column: tilted phone (when a source exists) or a soft
+  // visual block (when not).
+  const phoneTilt = -5;                          // degrees, clockwise negative
+  const phoneAreaW = Math.floor(width * 0.34);   // ~348 px
+  const textRight  = phoneAreaW > 0
+    ? width - phoneAreaW - Math.floor(width * 0.04)
+    : width - SAFE;
+  const textLeft   = SAFE;
+  const textSafe   = textRight - textLeft;
 
-  // Light scrim only behind the icon (keeps text legible without darkening the
-  // whole banner). Dropped from full-width scrim to a small radial fade.
+  const headlineLines = wrapByLen(headline, 24).slice(0, 2);
+  const headlineSz = fitText(longestLine(headlineLines), textSafe, Math.floor(height * 0.22), 0.62);
+  const headLineH  = Math.floor(headlineSz * 1.08);
+  const sublineSz  = subline
+    ? fitText(subline, textSafe, Math.floor(height * 0.085), 0.55)
+    : 0;
+  const gap = Math.floor(height * 0.04);
+  const totalTextH = headlineLines.length * headLineH + (subline ? gap + sublineSz : 0);
+  const textTop = Math.floor((height - totalTextH) / 2);
+
+  const headlineSvg = headlineLines.map((line, i) =>
+    `<text x="${textLeft}" y="${textTop + (i + 1) * headLineH - Math.floor(headLineH * 0.18)}"
+      font-family="Arial,Helvetica,sans-serif" font-size="${headlineSz}" font-weight="800"
+      fill="${theme.headline_color}">${escapeXml(line)}</text>`
+  ).join('\n');
+  const sublineSvg = subline
+    ? `<text x="${textLeft}" y="${textTop + headlineLines.length * headLineH + gap + sublineSz}"
+        font-family="Arial,Helvetica,sans-serif" font-size="${sublineSz}" font-weight="400"
+        fill="${theme.subheadline_color}">${escapeXml(subline)}</text>`
+    : '';
+
   const overlay = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
-  <text x="${textLeft}" y="${nameY}" dominant-baseline="middle"
-    font-family="Arial,Helvetica,sans-serif" font-size="${nameSz}" font-weight="800"
-    fill="${theme.headline_color}">${escapeXml(appName)}</text>
-  <text x="${textLeft}" y="${taglineY}" dominant-baseline="middle"
-    font-family="Arial,Helvetica,sans-serif" font-size="${tagSz}" font-weight="400"
-    fill="${theme.subheadline_color}">${escapeXml(tagline)}</text>
-</svg>`;
+    ${TEXT_SHADOW_DEFS}
+    ${headlineSvg}
+    ${sublineSvg}
+  </svg>`;
+
+  // Build phone layer (tilted) if we have a source.
+  const composites: sharp.OverlayOptions[] = [];
+  if (phonePath) {
+    const aspect = await screenshotAspect(phonePath);
+    const isLandscape = aspect < 1;
+    // Allow room for the tilt rotation (sharp's rotate expands the canvas).
+    const phoneAvailH = height - SAFE * 2;
+    let phoneH = isLandscape
+      ? Math.min(phoneAvailH, Math.floor(phoneAreaW * aspect))
+      : phoneAvailH;
+    let phoneW = Math.round(phoneH / aspect);
+    if (phoneW > phoneAreaW) {
+      phoneW = phoneAreaW;
+      phoneH = Math.round(phoneW * aspect);
+    }
+    const frame = await makeDeviceFrame(phonePath, phoneW, phoneH, 0, 0, 'top', 'cover');
+    const tilted = await sharp(frame)
+      .rotate(phoneTilt, { background: { r: 0, g: 0, b: 0, alpha: 0 } })
+      .png()
+      .toBuffer();
+    const tMeta = await sharp(tilted).metadata();
+    const tW = tMeta.width ?? phoneW;
+    const tH = tMeta.height ?? phoneH;
+    const phoneLeft = width - phoneAreaW - Math.floor(width * 0.02) + Math.floor((phoneAreaW - tW) / 2);
+    const phoneTop  = Math.floor((height - tH) / 2);
+    composites.push({ input: tilted, top: phoneTop, left: phoneLeft });
+  }
+  composites.push({ input: Buffer.from(overlay), top: 0, left: 0 });
 
   const outPath = path.join(outputDir, 'google-play', 'feature-graphic.png');
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
-  const composites: sharp.OverlayOptions[] = [{ input: Buffer.from(overlay), top: 0, left: 0 }];
-  if (iconLayer) composites.unshift(iconLayer);
-  await sharp(bg).composite(composites).png().toFile(outPath);
+  // Output as 24-bit PNG (no alpha) — Play rejects transparency on this asset.
+  await sharp(bg).composite(composites).flatten({ background: '#000000' }).png().toFile(outPath);
   console.log(`  ✓  feature-graphic.png (${width}×${height})`);
+}
+
+function wrapByLen(text: string, target: number): string[] {
+  const words = text.split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let cur = '';
+  for (const w of words) {
+    const next = cur ? `${cur} ${w}` : w;
+    if (next.length > target && cur) { lines.push(cur); cur = w; } else { cur = next; }
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
+function longestLine(lines: string[]): string {
+  return lines.reduce((a, b) => a.length > b.length ? a : b, '');
 }
 
 // ─── Subcommand: extract theme ────────────────────────────────────────────────

@@ -58,9 +58,28 @@ same set. For phones the canonical aspects are **9:16 portrait** or
 - **No "Best", "#1", "Top", "New", "Free", "Discount", "Sale", "Million Downloads"**
 - No rankings, testimonials, awards, or price/promo claims
 - No fake play-button overlay
-- Keep focal content **centred** — there are crop/cutoff zones on different surfaces
+- Keep focal content **away from the central play-button overlay zone** when a promo video is attached (Play renders a semi-transparent play button in the centre)
 
-**Source:** [ScreenshotWhale — feature graphic spec](https://screenshotwhale.com/feature-graphic-google-play)
+**High-conversion design playbook** (cross-referenced from Apptamin, Gummicube, ScreenshotWhale, 2026):
+
+| Rule | Why |
+|------|-----|
+| **One hook, one focal point.** 5–8 word benefit-led headline. | Users assess the graphic in <1 second. |
+| **Don't repeat the app name** in the graphic. | Play renders the name adjacent — repetition wastes pixels and risks the duplication penalty. |
+| **Drop the giant app icon.** A small brand chip (≤12% of canvas height) is acceptable; full icon-style branding is flagged. | The system already shows the icon next to the graphic in every surface. |
+| **Show a real visual** — a featured screenshot, character, or product hero. | Telegraphs the category and the experience instantly. |
+| **70–100 px safe margins** on every edge. | Crop zones differ per surface (search, listing, promo cards). |
+| **Centre kept clear** for the play-button overlay (centre ~280×140 px). | Promo-video listings overlay a semi-transparent play button. |
+| **Theme-match the screenshots** (palette + tone) but **don't duplicate screenshot #1**. | Brand consistency without redundancy — Play penalises duplicates. |
+| **Vibrant background** that contrasts with Play's white chrome. | Pure white / pale grey vanishes against the store UI. |
+| **Test at thumbnail size.** Bold weights, big text, text-shadow halo. | CTR is the dominant ranking input for search visibility. |
+
+`store-assets-gen`'s built-in feature graphic implements all of the above:
+benefit headline from `screenshots[0].headline` (the value slot), tilted phone
+showing the same screenshot, theme background, 70 px safe margins, no large
+app icon, 24-bit PNG flatten.
+
+**Sources:** [ScreenshotWhale — feature graphic spec](https://screenshotwhale.com/feature-graphic-google-play) · [Apptamin — feature graphic examples](https://www.apptamin.com/blog/feature-graphic-play-store/) · [Gummicube — feature graphic ASO best practices](https://www.gummicube.com/blog/google-play-feature-graphic-aso-best-practices/)
 
 ---
 
