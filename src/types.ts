@@ -13,7 +13,7 @@
 //   dual-phone-overlap      — two screenshots overlapping at slight opposing rotations
 //
 // Landscape layouts (canvas is wider than tall — for landscape-native apps):
-//   landscape-split         — phone right half, text + features left half
+//   landscape-split         — text band top, phone fills lower band (no overlap on wide shots)
 //   landscape-hero          — phone large centre, headline above
 //   landscape-text-only     — no-phone CTA closer at landscape (text-hero equivalent)
 //
@@ -110,7 +110,7 @@ export interface ScreenshotSpec {
 // ─── Sets / Themes ────────────────────────────────────────────────────────────
 
 // CSS/SVG background style (deterministic, no API calls).
-export type BackgroundStyle = 'gradient' | 'mesh' | 'bokeh' | 'geometric' | 'minimal';
+export type BackgroundStyle = 'gradient' | 'mesh' | 'bokeh' | 'geometric' | 'minimal' | 'app-motif';
 
 // Frame style for the phone mockup.
 export type FrameStyle = 'white-border' | 'none';
@@ -188,6 +188,13 @@ export interface AsoStrategy {
 
 export interface Spec {
   version: string;
+  /**
+   * User-authored steering note for the AI. Set via `/store-spec --hint "..."`.
+   * Treated as authoritative context for screenshot analysis, ASO copy
+   * generation, and AI background prompts (mixed into the motif haystack
+   * alongside aso.positioning / keywords / category).
+   */
+  hint?: string;
   aso?: AsoStrategy;                                     // optional but recommended — see /store-spec
   google_play: GooglePlayText;
   app_store: AppStoreText;

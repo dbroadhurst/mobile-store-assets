@@ -13,6 +13,12 @@
 
 version: "{{VERSION}}"
 
+# ── Steering hint (set via /store-spec --hint "...") ─────────────────────────
+# One paragraph that overrides anything the AI might guess wrong: what the app
+# really does, who it's for, the angle to lead with, and any real trust signals.
+# Flows into ASO copy, screenshot headlines, and AI background motifs.
+hint: ""
+
 # ── ASO strategy (drives AI background motifs + copy generation) ─────────────
 aso:
   primary_keywords:

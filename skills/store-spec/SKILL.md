@@ -6,7 +6,7 @@ description: >
   an ABCD A/B test matrix — multiple internally-coherent listings varying by
   layout, theme, frame, and headline framing — that /store-assets renders
   side-by-side. Run this before /store-assets.
-argument-hint: "[version] [--enhance] [--hints '...'] [--sets N] [--locales en-US,fr-FR,...] [--theme-from-screenshot path]"
+argument-hint: "[version] [--enhance] [--hint '...'] [--sets N] [--locales en-US,fr-FR,...] [--theme-from-screenshot path]"
 allowed-tools: Read Write Bash Glob
 ---
 
@@ -54,10 +54,34 @@ Arguments: $ARGUMENTS
 **Parse the arguments:**
 - First bare value = version (e.g. `1.0.20`). If omitted, use the latest folder in `marketing/releases/`.
 - `--enhance` = re-analyse an existing `spec.yaml`, improve weak copy and fill gaps; **preserve manual edits**.
-- `--hints "..."` = extra context (target market, upcoming features, tone).
+- `--hint "..."` (alias: `--hints`) = authoritative steering note from the user. See *Applying the hint* below — this is not a freeform tag, it materially changes what gets written. If omitted on `--enhance`, the existing `spec.hint` (if any) is reused.
 - `--sets N` (default `4`) = how many test sets (A, B, C, D, …) to generate. Each is a complete coherent listing variant.
 - `--locales en-US,fr-FR,de-DE` = generate per-locale store text and per-screenshot translated headlines.
 - `--theme-from-screenshot <path>` = sample base brand colors from a screenshot and use them to derive set themes. Run `store-assets-gen --extract-theme <path>` to get the YAML to splice in.
+
+---
+
+### Applying the hint
+
+When `--hint "..."` (or legacy `--hints "..."`) is passed, treat the string as **authoritative context** about what the app does, who it's for, and the angle the user wants to lead with. The hint outranks your visual inference from screenshots when they conflict. Things commonly carried in a hint:
+
+- *What the app actually does* (when the screenshots are ambiguous, e.g. an empty list view).
+- *Who it's for* (audience cue — flows into `aso.target_audience` and identity-framed headlines).
+- *What makes it different* (competitor cue — flows into `aso.positioning` and the description fold).
+- *Tone / voice* (playful, clinical, premium — biases headline framing and feature pill wording).
+- *Real, verifiable trust signals* (user counts, ratings, awards) — these satisfy the claim-verification rule below since the user is the source.
+
+Apply the hint in these places, in order:
+
+1. **Step 2 (analysis):** Read the hint *before* the screenshots. Use it as ground truth for the app's purpose; let it disambiguate any screen you can't immediately read.
+2. **Step 3 (ASO copy):** Bake it into `aso.positioning`, `aso.target_audience`, primary keyword choice, the first 3 lines of the description fold, and Subtitle / Short Description framing.
+3. **Step 4 (screenshot copy):** Where the hint specifies an angle (e.g. "emphasise speed"), let it bias headline + subhead wording on every screenshot.
+4. **Step 5 (sets / framings):** If the hint suggests a primary framing axis (outcome / audience / urgency / etc.), make set A use that axis; rotate the others normally.
+5. **Step 8 (write spec):** Persist the hint to a top-level `hint:` field in `spec.yaml` so subsequent `--enhance` runs, AI background generation, and any future regeneration carry the same steering. `store-assets-gen` mixes `spec.hint` into the motif haystack used for AI backgrounds, so a hint like *"calm, focused, for new parents"* will tint the generated backgrounds even though no copy field literally repeats those words.
+
+**Important:** Hint content from the user satisfies the *honesty rule* — claims the user gives you in the hint (e.g. *"50,000 paying customers"*, *"no ads, no tracking"*) can be used as-is. Don't second-guess them. Without a hint, the conservative defaults still apply.
+
+If `--enhance` is run without `--hint`, reuse the existing `spec.hint` from the file (if any) and behave as if it had been passed on the CLI. If both are present, the new `--hint` overrides.
 
 ---
 
@@ -265,13 +289,15 @@ For each set, write:
 | 0 | brand-primary       |   0°      |   0       |    0        | gradient    | white-border  | 0.65  |
 | 1 | warm-shift          | +20°      | +0.05     | +0.02       | mesh        | none          | 0.55  |
 | 2 | cool-shift          | −20°      | +0.05     | −0.02       | bokeh       | white-border  | 0.45  |
-| 3 | monochrome-accent   |   0°      | −0.50     |    0        | geometric   | none          | 0.70  |
+| 3 | app-motif           |   0°      | −0.20     | −0.05       | app-motif   | none          | 0.70  |
 | 4 | high-contrast       |   0°      | +0.20     | −0.05       | minimal     | white-border  | 0.65  |
 | 5 | muted               | +10°      | −0.25     | +0.05       | gradient    | none          | 0.55  |
 | 6 | inverted            | +180°     |   0       |    0        | mesh        | white-border  | 0.45  |
 | 7 | soft-pastel         | +30°      | −0.30     | +0.15       | bokeh       | none          | 0.70  |
 
 When N > 8, continue rotating hue by +45° from preset 0.
+
+The `app-motif` bg style renders a brand-tinted gradient with a faint scatter of vector glyphs (houses + keys for finance apps, dice + controllers for games, plates for food, etc). The glyph palette is picked from the same motif tokens used by the AI background prompts — so `aso.positioning`, `aso.primary_keywords`, `config.app.category`, and `spec.hint` all influence which icons appear. Unmatched categories fall back to abstract circles + triangles.
 
 #### Headline framing modes (rotate through across sets)
 
@@ -326,6 +352,11 @@ Write to `marketing/releases/{version}/spec.yaml` using this structure:
 
 version: "{version}"
 generated: "{date}"
+
+# ── Steering hint (from --hint or carried over from previous run) ────────────
+# Authoritative context: what the app does, who it's for, the angle to lead
+# with, and any real trust signals. Read before regenerating copy or art.
+hint: ""
 
 # ── ASO strategy ──────────────────────────────────────────────────────────────
 aso:

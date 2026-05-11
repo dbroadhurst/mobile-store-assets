@@ -3,10 +3,10 @@ import { escapeXml, fitText, makeDeviceFrame, resizeBg, screenshotAspect, stripB
 import type { LayoutInput } from '../types.js';
 
 // LANDSCAPE-SPLIT
-// Wide canvas. Phone occupies the right half (with native aspect — landscape
-// sources render landscape-shaped). Headline + subhead fill the left half.
-//
-// Use for landscape-native screenshots (games, video, navigation).
+// Horizontal split for wide canvases: headline + subhead in a top band,
+// phone fills the lower band with native aspect, centred. Avoids overlap on
+// landscape-native screenshots where the device frame would otherwise eat
+// the full width.
 export async function landscapeSplit(input: LayoutInput): Promise<Buffer> {
   const { background, screenshotPath, screenshot, theme, targetWidth: W, targetHeight: H } = input;
   const bg = await resizeBg(background, W, H);
@@ -15,30 +15,23 @@ export async function landscapeSplit(input: LayoutInput): Promise<Buffer> {
   const headline    = stripBrackets(screenshot.headline);
   const subheadline = screenshot.subheadline;
 
-  // Phone right side, native aspect
-  const ssAspect = await screenshotAspect(screenshotPath);   // h/w
-  const phoneH   = Math.floor(H * 0.82);
-  const phoneW   = Math.round(phoneH / ssAspect);
-  const phoneTop = Math.floor((H - phoneH) / 2);
-  // Pin to right with slight inset
-  const phoneLeft = W - phoneW - Math.floor(W * 0.05);
-  const phoneBuf  = await makeDeviceFrame(screenshotPath, phoneW, phoneH, 0, 0, 'top', 'cover');
+  // Top text band — left-aligned, full width with padding. Differs from
+  // landscape-hero (centred, uppercase) so the two layouts stay distinct.
+  const padX = Math.floor(W * 0.06);
+  const safe = W - padX * 2;
 
-  // Text fills left half
-  const padX = Math.floor(W * 0.05);
-  const safe = Math.max(W * 0.40, phoneLeft - padX * 2);
+  const headlineLines = wrap(headline, 32);
+  const headlineSz = fitText(longest(headlineLines), safe, Math.floor(H * 0.11), 0.62);
+  const lineH = Math.floor(headlineSz * 1.10);
 
-  const headlineLines = wrap(headline, 18);
-  const headlineSz = fitText(longest(headlineLines), safe, Math.floor(H * 0.10), 0.60);
-  const lineH = Math.floor(headlineSz * 1.15);
-
-  const subWrapped = wrap(subheadline ?? '', 36);
-  const subSz = fitText(longest(subWrapped), safe, Math.floor(H * 0.046), 0.55);
+  const subWrapped = wrap(subheadline ?? '', 60);
+  const subSz = subWrapped.length
+    ? fitText(longest(subWrapped), safe, Math.floor(H * 0.045), 0.55)
+    : 0;
   const subLineH = Math.floor(subSz * 1.30);
 
-  const totalH = headlineLines.length * lineH + Math.floor(H * 0.04) + subWrapped.length * subLineH;
-  const headlineY0 = Math.floor((H - totalH) / 2);
-  const subY0      = headlineY0 + headlineLines.length * lineH + Math.floor(H * 0.04);
+  const headlineY0 = Math.floor(H * 0.05);
+  const subY0      = headlineY0 + headlineLines.length * lineH + Math.floor(H * 0.025);
 
   const headlineSvg = headlineLines.map((line, i) =>
     `<text x="${padX}" y="${headlineY0 + (i + 1) * lineH}" font-family="Arial,Helvetica,sans-serif"
@@ -50,6 +43,26 @@ export async function landscapeSplit(input: LayoutInput): Promise<Buffer> {
       font-size="${subSz}" fill="${theme.subheadline_color}">${escapeXml(line)}</text>`
   ).join('\n');
 
+  // Phone in lower band: native aspect, centred horizontally.
+  const textBlockH = headlineLines.length * lineH
+    + (subWrapped.length ? Math.floor(H * 0.025) + subWrapped.length * subLineH : 0);
+  const phoneTop  = headlineY0 + textBlockH + Math.floor(H * 0.05);
+  const bottomPad = Math.floor(H * 0.05);
+  const availH    = H - phoneTop - bottomPad;
+  const ssAspect  = await screenshotAspect(screenshotPath);   // h/w
+  // Fit phone to the available band — clamp to safe width if the screenshot
+  // is wide enough that height-driven sizing would overflow.
+  const maxPhoneW = W - Math.floor(W * 0.10);
+  let phoneH = availH;
+  let phoneW = Math.round(phoneH / ssAspect);
+  if (phoneW > maxPhoneW) {
+    phoneW = maxPhoneW;
+    phoneH = Math.round(phoneW * ssAspect);
+  }
+  const phoneLeft = Math.floor((W - phoneW) / 2);
+  const phoneTopFinal = phoneTop + Math.floor((availH - phoneH) / 2);
+  const phoneBuf = await makeDeviceFrame(screenshotPath, phoneW, phoneH, 0, 0, 'top', 'cover');
+
   const overlay = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
     ${TEXT_SHADOW_DEFS}
     ${headlineSvg}
@@ -58,8 +71,8 @@ export async function landscapeSplit(input: LayoutInput): Promise<Buffer> {
 
   return sharp(bg)
     .composite([
-      { input: phoneBuf,             top: phoneTop, left: phoneLeft },
-      { input: Buffer.from(overlay), top: 0,        left: 0         },
+      { input: phoneBuf,             top: phoneTopFinal, left: phoneLeft },
+      { input: Buffer.from(overlay), top: 0,             left: 0         },
     ])
     .png()
     .toBuffer();

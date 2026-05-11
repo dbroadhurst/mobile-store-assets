@@ -10,7 +10,7 @@ import {
 // the brand-true baseline so that set A matches the user's brand colors
 // without modification.
 
-const BG_STYLES: BackgroundStyle[] = ['gradient', 'mesh', 'bokeh', 'geometric', 'minimal'];
+const BG_STYLES: BackgroundStyle[] = ['gradient', 'mesh', 'bokeh', 'app-motif', 'minimal'];
 const FRAMES: FrameStyle[] = ['white-border', 'none'];
 const SCRIM_TIERS = [0.65, 0.55, 0.45, 0.70];
 const PHONE_OFFSETS = [0.30, 0.34, 0.28, 0.32];
@@ -26,7 +26,7 @@ const RECIPES: ThemeRecipe[] = [
   { id: 'brand-primary',     shiftDegrees:   0, satDelta:  0.00, lightDelta:  0.00 },
   { id: 'warm-shift',        shiftDegrees:  20, satDelta:  0.05, lightDelta:  0.02 },
   { id: 'cool-shift',        shiftDegrees: -20, satDelta:  0.05, lightDelta: -0.02 },
-  { id: 'monochrome-accent', shiftDegrees:   0, satDelta: -0.50, lightDelta:  0.00 },
+  { id: 'app-motif',         shiftDegrees:   0, satDelta: -0.20, lightDelta: -0.05 },
   { id: 'high-contrast',     shiftDegrees:   0, satDelta:  0.20, lightDelta: -0.05 },
   { id: 'muted',             shiftDegrees:  10, satDelta: -0.25, lightDelta:  0.05 },
   { id: 'inverted',          shiftDegrees: 180, satDelta:  0.00, lightDelta:  0.00 },

@@ -316,14 +316,17 @@ function graphicStylePrompt(theme: Theme, app: AppContext): string {
       return `Minimalist geometric abstract composition, simple overlapping shapes in ${palette}${motif}, flat vector design, modern aesthetic. ${TEXT_SAFE_DIRECTIVE}`;
     case 'minimal':
       return `Minimal flat color field in ${palette}${motif} with subtle radial vignette, clean modern design. ${TEXT_SAFE_DIRECTIVE}`;
+    case 'app-motif':
+      return `Minimal abstract composition in ${palette}${motif}, faint line-art vector silhouettes scattered as a watermark, soft modern illustration. ${TEXT_SAFE_DIRECTIVE}`;
   }
 }
 
-// Light-touch context derived from the spec + config. We try to produce a
-// short "evoking X" phrase (e.g. "evoking houses, keys, financial planning")
-// without being too literal — the AI should hint at the topic, not draw it.
+// Light-touch context derived from the spec + config. Produces both a natural-
+// language phrase (for AI prompts) and a set of motif tokens (for the CSS
+// `app-motif` background renderer, which keys faint vector glyphs by token).
 interface AppContext {
   motifPhrase: string;
+  motifTokens: string[];
 }
 
 function buildAppContext(spec: Spec, config: StoreConfig): AppContext {
@@ -333,35 +336,45 @@ function buildAppContext(spec: Spec, config: StoreConfig): AppContext {
     ...(spec.aso?.secondary_keywords ?? []),
   ].map(k => k.toLowerCase());
   const positioning = (spec.aso?.positioning ?? '').toLowerCase();
+  const hint = (spec.hint ?? '').toLowerCase();
 
-  // Curated motif map — the AI gets a short phrase rather than a literal list,
-  // so the background hints at the subject without becoming illustrative of it.
-  // Categories not in the map fall through to a generic abstract phrase.
-  const haystack = `${category} ${keywords.join(' ')} ${positioning}`;
-  const motifs: string[] = [];
-  const add = (m: string) => { if (!motifs.includes(m)) motifs.push(m); };
+  // Curated motif map — pairs a topic *token* (used by the CSS app-motif glyph
+  // library) with a longer phrase (used by AI prompts). The same regex haystack
+  // drives both so they stay in sync. Categories not matched fall through to
+  // 'abstract' shapes.
+  const haystack = `${category} ${keywords.join(' ')} ${positioning} ${hint}`;
+  const tokens: string[] = [];
+  const phrases: string[] = [];
+  const add = (token: string, phrase: string) => {
+    if (!tokens.includes(token)) { tokens.push(token); phrases.push(phrase); }
+  };
 
   if (/mortgage|loan|finance|home|property|real estate|car loan|repayment|interest/.test(haystack))
-    add('houses, keys, gentle architectural silhouettes, financial planning');
+    add('finance', 'houses, keys, gentle architectural silhouettes, financial planning');
   if (/budget|spend|money|expense|saving|invest/.test(haystack))
-    add('coins, charts, growth curves, abstract money flow');
+    add('money', 'coins, charts, growth curves, abstract money flow');
   if (/health|fitness|workout|exercise|run|step/.test(haystack))
-    add('movement, soft pulses, energy lines');
+    add('fitness', 'movement, soft pulses, energy lines');
   if (/meditat|mindful|sleep|calm|breath/.test(haystack))
-    add('soft waves, gentle ripples, calm horizon lines');
+    add('meditation', 'soft waves, gentle ripples, calm horizon lines');
   if (/learn|education|study|language|quiz/.test(haystack))
-    add('open books, paths, growth arcs');
+    add('learning', 'open books, paths, growth arcs');
   if (/photo|camera|gallery|art/.test(haystack))
-    add('frames, light leaks, soft prisms');
+    add('photo', 'frames, light leaks, soft prisms');
   if (/travel|trip|map|navigation/.test(haystack))
-    add('soft maps, paths, distant horizons');
+    add('travel', 'soft maps, paths, distant horizons');
+  if (/game|puzzle|quest|adventure|arcade|rpg/.test(haystack))
+    add('game', 'controllers, dice, abstract play tokens');
+  if (/music|sound|audio|listen|playlist|song/.test(haystack))
+    add('music', 'notes, waveforms, soft rhythm lines');
+  if (/food|recipe|cook|meal|nutrition|kitchen/.test(haystack))
+    add('food', 'plates, utensils, fresh produce silhouettes');
 
-  // Generic fallback if nothing matched
-  const motifPhrase = motifs.length > 0
-    ? motifs.join(' and ')
+  const motifPhrase = phrases.length > 0
+    ? phrases.join(' and ')
     : 'modern minimal abstraction';
 
-  return { motifPhrase };
+  return { motifPhrase, motifTokens: tokens };
 }
 
 interface BgArgs {
@@ -389,8 +402,9 @@ async function acquireBackground(b: BgArgs): Promise<Buffer> {
   const dims = ORIENTATION_DIMS[b.orientation];
 
   // CSS/SVG path: deterministic from theme — render once at the canonical size.
+  // App-motif tokens flow in so the `app-motif` bg style picks the right glyphs.
   if (!b.args.useAiBg) {
-    const buf = await renderBackground(b.theme, dims.w, dims.h);
+    const buf = await renderBackground(b.theme, dims.w, dims.h, b.appContext.motifTokens);
     b.bucket.set(memKey, buf);
     return buf;
   }
