@@ -2,7 +2,7 @@
 
 A Claude Code plugin that generates **every iOS and Android marketing image** an app needs — App Store + Google Play screenshots, feature graphics, Wear OS, TV banner — from your raw app screenshots, and authors ASO copy as a **4-set A/B test matrix** ready for Apple PPO and Google Play store-listing experiments.
 
-Default rendering is **CSS / SVG composition** with Sharp: deterministic, instant, free. Optional AI backgrounds via Imagen 4 or `gpt-image-1` when API keys are present. Eight unique backgrounds power the entire matrix (4 themes × 2 orientations).
+**Backgrounds default to AI** (Imagen 4 or `gpt-image-1`) when an `OPENAI_API_KEY` or `GOOGLE_AI_API_KEY` is present in `marketing/.env.local` — the prompt is steered by your `app.category`, `aso.positioning`, `aso.primary_keywords`, and `spec.hint` so every set carries on-brand subject motifs. **Fallback is CSS / SVG** composition with Sharp: deterministic, instant, free — used automatically when no key is set, or via `--css-bg`. Eight unique backgrounds power the entire matrix (4 themes × 2 orientations).
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Status: stable](https://img.shields.io/badge/status-stable-success)

@@ -1,5 +1,5 @@
 import sharp from 'sharp';
-import { escapeXml, fitText, makeDeviceFrame, resizeBg, stripBrackets, screenshotAspect, TEXT_SHADOW_DEFS } from '../helpers.js';
+import { escapeXml, fitWrapped, makeDeviceFrame, resizeBg, stripBrackets, screenshotAspect, TEXT_SHADOW_DEFS } from '../helpers.js';
 import type { LayoutInput } from '../types.js';
 
 // Layout 02 — CAPTION BELOW
@@ -38,26 +38,40 @@ export async function captionBelow(input: LayoutInput): Promise<Buffer> {
   const cx = W / 2;
   const safe = W * 0.84;
 
-  // Caption (3 lines max)
+  // ── Caption area: between phone bottom and canvas bottom ─────────────────
+  // Bound caption + subline to the available vertical space so nothing clips
+  // the canvas edge. fitWrapped picks the largest font that fits both
+  // dimensions and avoids orphan-word line breaks.
   const captionY0 = phoneTop + phoneH + Math.floor(H * 0.04);
-  const lines = splitCaption(headline);
-  const captionSz = fitText(longest(lines), safe, Math.floor(W * 0.062), 0.58);
-  // Bumped to 1.30 from 1.18 — capitals need more vertical breathing room.
-  const lineH = Math.floor(captionSz * 1.30);
+  const captionAreaH = H - captionY0 - Math.floor(H * 0.03);  // leave a 3% bottom gutter
+  // Captions can use most of the available area, but reserve room for the
+  // subline. Allow up to 3 lines for long captions.
+  const captionBudgetH = subheadline
+    ? Math.floor(captionAreaH * 0.60)
+    : Math.floor(captionAreaH * 0.85);
+  const caption = fitWrapped(headline, safe, captionBudgetH,
+    Math.floor(W * 0.062), 0.58, 1.30, { maxLines: 3, minSize: Math.floor(W * 0.028) });
+  const lineH = Math.floor(caption.size * 1.30);
+  const totalCaptionH = caption.lines.length * lineH;
 
-  const captionSvg = lines.map((line, i) =>
+  const captionSvg = caption.lines.map((line, i) =>
     `<text x="${cx}" y="${captionY0 + (i + 1) * lineH}" text-anchor="middle"
-      font-family="Arial,Helvetica,sans-serif" font-size="${captionSz}" font-weight="800"
+      font-family="Arial,Helvetica,sans-serif" font-size="${caption.size}" font-weight="800"
       fill="${theme.headline_color}">${escapeXml(line)}</text>`
   ).join('\n');
 
-  // Subhead — sized for readable hierarchy with a clear gap from the caption
-  const subSz = Math.floor(captionSz * 0.62);
-  const subY = captionY0 + lines.length * lineH + Math.floor(H * 0.040);
-  const subWrapped = wrap(subheadline ?? '', 38);
-  const subSvg = subWrapped.map((line, i) =>
-    `<text x="${cx}" y="${subY + i * Math.floor(subSz * 1.30)}" text-anchor="middle"
-      font-family="Arial,Helvetica,sans-serif" font-size="${subSz}"
+  // Subhead — fits in the remaining space below the caption.
+  const subGap = Math.floor(H * 0.025);
+  const subAreaH = Math.max(0, captionAreaH - totalCaptionH - subGap);
+  const sub = subheadline
+    ? fitWrapped(subheadline, safe, subAreaH,
+        Math.floor(caption.size * 0.62), 0.55, 1.30, { maxLines: 2, minSize: Math.floor(W * 0.020) })
+    : { lines: [] as string[], size: 0 };
+  const subLineH = sub.size ? Math.floor(sub.size * 1.30) : 0;
+  const subY = captionY0 + totalCaptionH + subGap;
+  const subSvg = sub.lines.map((line, i) =>
+    `<text x="${cx}" y="${subY + (i + 1) * subLineH - Math.floor(subLineH * 0.20)}" text-anchor="middle"
+      font-family="Arial,Helvetica,sans-serif" font-size="${sub.size}"
       fill="${theme.subheadline_color}">${escapeXml(line)}</text>`
   ).join('\n');
 
@@ -90,27 +104,3 @@ export async function captionBelow(input: LayoutInput): Promise<Buffer> {
     .toBuffer();
 }
 
-function longest(lines: string[]): string {
-  return lines.reduce((a, b) => a.length > b.length ? a : b, '');
-}
-
-function splitCaption(text: string): string[] {
-  const words = text.split(/\s+/).filter(Boolean);
-  if (words.length <= 4) return [words.join(' ')];
-  const target = Math.ceil(words.length / 3);
-  const out: string[] = [];
-  for (let i = 0; i < words.length; i += target) out.push(words.slice(i, i + target).join(' '));
-  return out.slice(0, 3);
-}
-
-function wrap(text: string, target: number): string[] {
-  const words = text.split(/\s+/).filter(Boolean);
-  const lines: string[] = [];
-  let cur = '';
-  for (const w of words) {
-    const next = cur ? `${cur} ${w}` : w;
-    if (next.length > target && cur) { lines.push(cur); cur = w; } else { cur = next; }
-  }
-  if (cur) lines.push(cur);
-  return lines.slice(0, 2);
-}

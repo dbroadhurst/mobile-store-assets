@@ -79,14 +79,18 @@ export async function generateBackground(opts: GenerateOptions): Promise<Buffer>
 
   return withRetry(async () => {
     if (provider === 'openai') {
+      // background: 'opaque' tells gpt-image-1 not to return a transparent
+      // PNG — store assets must be 24-bit, and the default 'auto' lets the
+      // model decide (occasionally transparent). Defense in depth alongside
+      // the flatten + removeAlpha post-step in index.ts.
       const resp = await openaiClient(apiKey).images.generate({
         model,
         prompt: fullPrompt,
         n: 1,
         size: toOpenAISize(aspectRatio),
         quality,
-        // @ts-ignore — output_format is valid for gpt-image-1 but not yet in all SDK type defs
         output_format: 'png',
+        background: 'opaque',
       });
       const b64 = resp.data?.[0]?.b64_json;
       if (!b64) throw new Error('OpenAI returned no image bytes');
@@ -114,8 +118,8 @@ export async function generateFeatureGraphicBg(opts: Omit<GenerateOptions, 'aspe
         n: 1,
         size: '1536x1024',
         quality,
-        // @ts-ignore
         output_format: 'png',
+        background: 'opaque',
       });
       const b64 = resp.data?.[0]?.b64_json;
       if (!b64) throw new Error('OpenAI returned no image bytes');

@@ -137,7 +137,7 @@ Output something like:
 ```
 ✓ Bootstrapped marketing/ for {appName}
   marketing/.store-config.yaml      ← edit brand colours + theme
-  marketing/.env.local.example      ← rename to .env.local + add API key (optional)
+  marketing/.env.local.example      ← rename to .env.local + add an OpenAI or Google AI key (recommended — without one /store-assets falls back to plain CSS/SVG backgrounds)
   marketing/releases/{version}/screenshots/  ← drop screenshots here
   marketing/releases/{version}/spec.yaml      ← starter spec
 

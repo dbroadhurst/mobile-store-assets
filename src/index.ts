@@ -24,7 +24,7 @@ import {
   type Provider,
   type OpenAIQuality,
 } from './gemini.js';
-import { resizeBg, escapeXml, fitText, screenshotAspect, makeDeviceFrame, stripBrackets, TEXT_SHADOW_DEFS } from './helpers.js';
+import { resizeBg, escapeXml, fitText, fitWrapped, screenshotAspect, makeDeviceFrame, stripBrackets, TEXT_SHADOW_DEFS } from './helpers.js';
 import { layoutForSet } from './story-arc.js';
 import { textHero } from './layouts/text-hero.js';
 import { captionBelow } from './layouts/caption-below.js';
@@ -289,36 +289,65 @@ const PHOTO_NEGATIVE =
   'flat vector illustration style, abstract graphic design, no photograph, ' +
   'no realistic objects, no people, no UI elements, no text, no letters, no numbers, no logos';
 
-// Composition rule that must apply to every background — text overlays the
-// upper-third (uppercase-top, caption-below, highlight-pill) and lower-third
-// (side-list, dual-phone), so the centre carries the visual interest.
+// Composition rule that must apply to every background. The layouts in this
+// system put phone mockups and centred text panels in the middle of the
+// canvas, so motifs concentrated there get covered. Motifs *at the edges*
+// remain visible alongside the overlays.
+//
+// Distribute subjects to the canvas perimeter (top band, bottom band, left
+// edge, right edge, corners) and keep the centre soft so phone/text overlays
+// sit on it cleanly.
 const TEXT_SAFE_DIRECTIVE =
-  'open uncluttered space at the top and bottom for headline text overlay, ' +
-  'visual interest concentrated in the centre, soft and subtle around the edges';
+  'Distribute subject motifs around the edges of the canvas — the top band, ' +
+  'bottom band, left edge, right edge, and corners — so they remain visible ' +
+  'when phone mockups and centred text panels overlay the middle. Keep the ' +
+  'centre 40% soft, low-contrast and uncluttered. Subjects should be abstract ' +
+  'and stylised, not literal illustrations.';
 
 function graphicStylePrompt(theme: Theme, app: AppContext): string {
-  // Per-bg-style prompt seeds. Each describes a graphic/illustrative composition
-  // and references the theme palette by NAME (never hex — Imagen treats hex as
-  // text and renders it visibly). The `app` block injects what the app actually
-  // does so backgrounds carry brand-relevant motifs (e.g. "subtle home and key
-  // silhouettes" for a mortgage app), tuned text-safe so headlines stay
-  // readable on top.
-  const motif = app.motifPhrase ? `, evoking ${app.motifPhrase}` : '';
+  // Builds a structured prompt for AI background generation. Each clause has a
+  // distinct purpose so the model can attend to them independently:
+  //   1. Style + palette  — the visual language (gradient / mesh / bokeh / …)
+  //   2. Subject motifs   — concrete app-specific imagery (flag stars for a
+  //                          civics app, houses for mortgage, etc)
+  //   3. User context     — the raw spec.hint, verbatim, capped to 200 chars
+  //                          (the user is the strongest source of truth)
+  //   4. Text-safe        — keep top/bottom open, centre interest
+  // Palette is referenced by NAME — never hex (Imagen renders hex as text).
   const palette = theme.palette_name;
-  switch (theme.bg_style) {
-    case 'gradient':
-      return `Soft abstract gradient wash blending ${palette}${motif}, smooth flat color field, minimal modern composition. ${TEXT_SAFE_DIRECTIVE}`;
-    case 'mesh':
-      return `Abstract mesh-gradient composition with smooth color blends in ${palette}${motif}, flowing organic forms, modern flat design. ${TEXT_SAFE_DIRECTIVE}`;
-    case 'bokeh':
-      return `Abstract bokeh-style illustration with soft blurred color blobs in ${palette}${motif}, dreamy minimal vector look. ${TEXT_SAFE_DIRECTIVE}`;
-    case 'geometric':
-      return `Minimalist geometric abstract composition, simple overlapping shapes in ${palette}${motif}, flat vector design, modern aesthetic. ${TEXT_SAFE_DIRECTIVE}`;
-    case 'minimal':
-      return `Minimal flat color field in ${palette}${motif} with subtle radial vignette, clean modern design. ${TEXT_SAFE_DIRECTIVE}`;
-    case 'app-motif':
-      return `Minimal abstract composition in ${palette}${motif}, faint line-art vector silhouettes scattered as a watermark, soft modern illustration. ${TEXT_SAFE_DIRECTIVE}`;
-  }
+  const styleSeed = (() => {
+    switch (theme.bg_style) {
+      case 'gradient':
+        return `Soft abstract gradient wash in ${palette}, smooth flat color field, minimal modern composition.`;
+      case 'mesh':
+        return `Abstract mesh-gradient composition with smooth color blends in ${palette}, flowing organic forms, modern flat design.`;
+      case 'bokeh':
+        return `Abstract bokeh-style illustration with soft blurred color blobs in ${palette}, dreamy minimal vector look.`;
+      case 'geometric':
+        return `Minimalist geometric abstract composition, simple overlapping shapes in ${palette}, flat vector design, modern aesthetic.`;
+      case 'minimal':
+        return `Minimal flat color field in ${palette} with subtle radial vignette, clean modern design.`;
+      case 'app-motif':
+        return `Minimal abstract composition in ${palette}, faint line-art vector silhouettes scattered as a watermark, soft modern illustration.`;
+    }
+  })();
+
+  const subjectMotif = app.motifPhrase
+    ? `Subject motifs: faint, semi-transparent ${app.motifPhrase} — abstract and stylised as soft background imagery, not literal illustrations.`
+    : '';
+
+  // App context lifts the user-authored steering text directly into the prompt.
+  // The hint outranks our regex inference because it's authoritative.
+  const ctxBits: string[] = [];
+  if (app.category) ctxBits.push(`category: ${app.category}`);
+  if (app.hint)     ctxBits.push(`app context: ${truncate(app.hint, 200)}`);
+  const userContext = ctxBits.length ? ctxBits.join('. ') + '.' : '';
+
+  return [styleSeed, subjectMotif, userContext, TEXT_SAFE_DIRECTIVE].filter(Boolean).join(' ');
+}
+
+function truncate(s: string, n: number): string {
+  return s.length <= n ? s : s.slice(0, n - 1).trimEnd() + '…';
 }
 
 // Light-touch context derived from the spec + config. Produces both a natural-
@@ -327,6 +356,8 @@ function graphicStylePrompt(theme: Theme, app: AppContext): string {
 interface AppContext {
   motifPhrase: string;
   motifTokens: string[];
+  hint: string;
+  category: string;
 }
 
 function buildAppContext(spec: Spec, config: StoreConfig): AppContext {
@@ -336,12 +367,16 @@ function buildAppContext(spec: Spec, config: StoreConfig): AppContext {
     ...(spec.aso?.secondary_keywords ?? []),
   ].map(k => k.toLowerCase());
   const positioning = (spec.aso?.positioning ?? '').toLowerCase();
-  const hint = (spec.hint ?? '').toLowerCase();
+  const hintRaw = (spec.hint ?? '').trim();
+  const hint = hintRaw.toLowerCase();
 
   // Curated motif map — pairs a topic *token* (used by the CSS app-motif glyph
-  // library) with a longer phrase (used by AI prompts). The same regex haystack
+  // library) with a longer phrase (used by AI prompts). Same regex haystack
   // drives both so they stay in sync. Categories not matched fall through to
   // 'abstract' shapes.
+  //
+  // Word-boundary anchors (\b) prevent false matches like /quest/ inside
+  // "questions" (which previously dragged game motifs into education apps).
   const haystack = `${category} ${keywords.join(' ')} ${positioning} ${hint}`;
   const tokens: string[] = [];
   const phrases: string[] = [];
@@ -349,32 +384,42 @@ function buildAppContext(spec: Spec, config: StoreConfig): AppContext {
     if (!tokens.includes(token)) { tokens.push(token); phrases.push(phrase); }
   };
 
-  if (/mortgage|loan|finance|home|property|real estate|car loan|repayment|interest/.test(haystack))
+  if (/\b(mortgage|loan|finance|property|real estate|repayment|interest)\b/.test(haystack))
     add('finance', 'houses, keys, gentle architectural silhouettes, financial planning');
-  if (/budget|spend|money|expense|saving|invest/.test(haystack))
+  if (/\b(budget|spend|money|expense|saving|invest)\w*/.test(haystack))
     add('money', 'coins, charts, growth curves, abstract money flow');
-  if (/health|fitness|workout|exercise|run|step/.test(haystack))
+  // 'run' and 'step' deliberately excluded — they false-match common phrases
+  // like "step-by-step" and "run a test" outside any fitness context.
+  if (/\b(health|fitness|workout|exercise|cardio|yoga|pilates|gym|jog|treadmill|marathon)\w*/.test(haystack))
     add('fitness', 'movement, soft pulses, energy lines');
-  if (/meditat|mindful|sleep|calm|breath/.test(haystack))
+  if (/\b(meditat|mindful|sleep|calm|breath)\w*/.test(haystack))
     add('meditation', 'soft waves, gentle ripples, calm horizon lines');
-  if (/learn|education|study|language|quiz/.test(haystack))
-    add('learning', 'open books, paths, growth arcs');
-  if (/photo|camera|gallery|art/.test(haystack))
+  if (/\b(civics|citizen|naturali[sz]ation|uscis|n-?400|voting|election|government|democracy|constitution)\w*/.test(haystack))
+    add('civics', 'American flag stars and stripes, ballot, scrolls, neoclassical column silhouettes, civic architecture');
+  if (/\b(learn|education|study|language|quiz|test|exam|practice|tutor|course|lesson|flashcard)\w*/.test(haystack))
+    add('learning', 'open books, paths, growth arcs, gentle academic motifs');
+  if (/\b(photo|camera|gallery|portrait|selfie)\w*/.test(haystack))
     add('photo', 'frames, light leaks, soft prisms');
-  if (/travel|trip|map|navigation/.test(haystack))
+  if (/\b(travel|trip|map|navigation|flight|hotel|tour)\w*/.test(haystack))
     add('travel', 'soft maps, paths, distant horizons');
-  if (/game|puzzle|quest|adventure|arcade|rpg/.test(haystack))
+  if (/\b(game|puzzle|adventure|arcade|rpg)\b/.test(haystack))
     add('game', 'controllers, dice, abstract play tokens');
-  if (/music|sound|audio|listen|playlist|song/.test(haystack))
+  if (/\b(music|sound|audio|listen|playlist|song|podcast)\w*/.test(haystack))
     add('music', 'notes, waveforms, soft rhythm lines');
-  if (/food|recipe|cook|meal|nutrition|kitchen/.test(haystack))
+  if (/\b(food|recipe|cook|meal|nutrition|kitchen|chef|baking)\w*/.test(haystack))
     add('food', 'plates, utensils, fresh produce silhouettes');
+  if (/\b(news|journalism|headline|magazine|article|reader|press)\w*/.test(haystack))
+    add('news', 'newspaper folds, soft column rules, headline strips');
+  if (/\b(task|to-?do|project|plan|productivity|kanban|reminder|note)\w*/.test(haystack))
+    add('productivity', 'checklist marks, gentle grid lines, project board outlines');
+  if (/\b(chat|messag|social|community|forum|discus|group)\w*/.test(haystack))
+    add('social', 'speech bubbles, gentle connection lines, social graph nodes');
 
   const motifPhrase = phrases.length > 0
     ? phrases.join(' and ')
     : 'modern minimal abstraction';
 
-  return { motifPhrase, motifTokens: tokens };
+  return { motifPhrase, motifTokens: tokens, hint: hintRaw, category };
 }
 
 interface BgArgs {
@@ -431,6 +476,11 @@ async function acquireBackground(b: BgArgs): Promise<Buffer> {
     });
     b.cache.write(diskKey, buf);
   }
+  // Guarantee the bg is opaque RGB before it reaches the compositor — some AI
+  // providers return PNGs with an alpha channel (even fully-opaque ones), and
+  // a 4-channel base contaminates the rest of the pipeline. Backstop blends
+  // with the theme so any actual transparency at the edges reads as bg.
+  buf = await sharp(buf).flatten({ background: b.theme.bg_from }).png().toBuffer();
   b.bucket.set(memKey, buf);
   return buf;
 }
@@ -451,6 +501,7 @@ async function buildFeatureGraphic(
   set: SetSpec,
   bucket: Map<string, Buffer>,
   appContext: AppContext,
+  setIndex: number,
 ): Promise<void> {
   const { width, height } = FEATURE_GRAPHIC;
   console.log('  Generating feature graphic...');
@@ -465,17 +516,19 @@ async function buildFeatureGraphic(
   const bg = await resizeBg(bgRaw, width, height);
 
   // ── Best-practice rules baked into the layout ──────────────────────────────
-  // • Lead with a benefit headline (5–8 words). NOT the app name — Play shows
-  //   the app name adjacent to the graphic, so repeating it is wasted pixels
-  //   and Google flags icon-style branding as duplication.
-  // • Featured screenshot (slot 0 / "value") as the visual focal point on the
-  //   right, slightly tilted for energy. Tells the category in < 1 second.
-  // • 70 px safe margins on every edge (crop zones differ per surface).
-  // • Centre kept reasonably clear so a future promo-video play-button overlay
-  //   doesn't obscure critical content.
-  // • Theme background + accent + text-shadow halo for thumbnail legibility.
-  //   Sources: Apptamin, Gummicube, ScreenshotWhale ASO best-practice guides.
-  const SAFE = 70;
+  // • Benefit-led headline (5–8 words) from screenshots[0] — never the app
+  //   name (Play shows it adjacent and flags duplication).
+  // • Multiple phones (up to 3) telling the app's story at a glance.
+  // • One of 3 rotating variants per set (banner-bottom / hero-right /
+  //   cluster-left) so the matrix offers visual variety, not 4 copies.
+  // • Adaptive panel scrim — dark when headline is light, light when dark —
+  //   so text reads against any AI background.
+  // • Phones supersampled (2×) + lanczos3 downsize for crisp small frames.
+  // • Slight edge bleed allowed (phones can clip the safe zone by ~30 px)
+  //   for energy.
+  // • 24-bit PNG output (flatten + removeAlpha post-step).
+  // Sources: Apptamin, Gummicube, ScreenshotWhale ASO guides (2026).
+  const SAFE = 60;
 
   // Pick the strongest copy: first screenshot's headline (value slot is
   // authored as the listing's hero promise). Fall back through app_store text.
@@ -494,8 +547,7 @@ async function buildFeatureGraphic(
         ? spec.app_store.promotional_text
         : '');
 
-  // Resolve a featured screenshot. Prefer android-phone (this is a Play asset);
-  // fall back through ios-phone / other landscape variants for landscape apps.
+  // Resolve up to 3 phone sources from the first 3 screenshots in the spec.
   const ssDir = path.join(args.projectRoot, args.screenshotsDir);
   const sourcePicks: Array<{ platform: string; folder: string }> = [
     { platform: 'android-phone',  folder: 'android-phone'  },
@@ -503,87 +555,377 @@ async function buildFeatureGraphic(
     { platform: 'android-tablet', folder: 'android-tablet' },
     { platform: 'ios-tablet',     folder: 'ios-tablet'     },
   ];
-  let phonePath: string | null = null;
-  for (const pick of sourcePicks) {
-    const file = valueSs?.sources?.[pick.platform as Platform];
-    if (!file) continue;
-    const abs = path.join(ssDir, pick.folder, file);
-    if (fs.existsSync(abs)) { phonePath = abs; break; }
-  }
-
-  // ── Layout ────────────────────────────────────────────────────────────────
-  // Left column: headline + optional sub-line, left-aligned, vertically
-  // centred. Right column: tilted phone (when a source exists) or a soft
-  // visual block (when not).
-  const phoneTilt = -5;                          // degrees, clockwise negative
-  const phoneAreaW = Math.floor(width * 0.34);   // ~348 px
-  const textRight  = phoneAreaW > 0
-    ? width - phoneAreaW - Math.floor(width * 0.04)
-    : width - SAFE;
-  const textLeft   = SAFE;
-  const textSafe   = textRight - textLeft;
-
-  const headlineLines = wrapByLen(headline, 24).slice(0, 2);
-  const headlineSz = fitText(longestLine(headlineLines), textSafe, Math.floor(height * 0.22), 0.62);
-  const headLineH  = Math.floor(headlineSz * 1.08);
-  const sublineSz  = subline
-    ? fitText(subline, textSafe, Math.floor(height * 0.085), 0.55)
-    : 0;
-  const gap = Math.floor(height * 0.04);
-  const totalTextH = headlineLines.length * headLineH + (subline ? gap + sublineSz : 0);
-  const textTop = Math.floor((height - totalTextH) / 2);
-
-  const headlineSvg = headlineLines.map((line, i) =>
-    `<text x="${textLeft}" y="${textTop + (i + 1) * headLineH - Math.floor(headLineH * 0.18)}"
-      font-family="Arial,Helvetica,sans-serif" font-size="${headlineSz}" font-weight="800"
-      fill="${theme.headline_color}">${escapeXml(line)}</text>`
-  ).join('\n');
-  const sublineSvg = subline
-    ? `<text x="${textLeft}" y="${textTop + headlineLines.length * headLineH + gap + sublineSz}"
-        font-family="Arial,Helvetica,sans-serif" font-size="${sublineSz}" font-weight="400"
-        fill="${theme.subheadline_color}">${escapeXml(subline)}</text>`
-    : '';
-
-  const overlay = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
-    ${TEXT_SHADOW_DEFS}
-    ${headlineSvg}
-    ${sublineSvg}
-  </svg>`;
-
-  // Build phone layer (tilted) if we have a source.
-  const composites: sharp.OverlayOptions[] = [];
-  if (phonePath) {
-    const aspect = await screenshotAspect(phonePath);
-    const isLandscape = aspect < 1;
-    // Allow room for the tilt rotation (sharp's rotate expands the canvas).
-    const phoneAvailH = height - SAFE * 2;
-    let phoneH = isLandscape
-      ? Math.min(phoneAvailH, Math.floor(phoneAreaW * aspect))
-      : phoneAvailH;
-    let phoneW = Math.round(phoneH / aspect);
-    if (phoneW > phoneAreaW) {
-      phoneW = phoneAreaW;
-      phoneH = Math.round(phoneW * aspect);
+  function resolvePhonePath(ss: typeof valueSs): string | null {
+    if (!ss) return null;
+    for (const pick of sourcePicks) {
+      const file = ss.sources?.[pick.platform as Platform];
+      if (!file) continue;
+      const abs = path.join(ssDir, pick.folder, file);
+      if (fs.existsSync(abs)) return abs;
     }
-    const frame = await makeDeviceFrame(phonePath, phoneW, phoneH, 0, 0, 'top', 'cover');
-    const tilted = await sharp(frame)
-      .rotate(phoneTilt, { background: { r: 0, g: 0, b: 0, alpha: 0 } })
-      .png()
-      .toBuffer();
-    const tMeta = await sharp(tilted).metadata();
-    const tW = tMeta.width ?? phoneW;
-    const tH = tMeta.height ?? phoneH;
-    const phoneLeft = width - phoneAreaW - Math.floor(width * 0.02) + Math.floor((phoneAreaW - tW) / 2);
-    const phoneTop  = Math.floor((height - tH) / 2);
-    composites.push({ input: tilted, top: phoneTop, left: phoneLeft });
+    return null;
   }
+  const phonePaths = spec.screenshots
+    .slice(0, 3)
+    .map(resolvePhonePath)
+    .filter((p): p is string => p !== null);
+
+  // ── Adaptive panel scrim ──────────────────────────────────────────────────
+  // Picks fill colour based on the theme's headline colour: white-on-light or
+  // dark-on-dark are unreadable, so we invert. The 0.55–0.65 opacity range
+  // keeps the bg motifs visible at the panel edges.
+  const lightText = isLightHex(theme.headline_color);
+  const scrimFill = lightText ? '#0A0A0F' : '#FFFFFF';
+  const scrimOp   = lightText ? 0.58 : 0.72;
+
+  // ── Variant dispatch ──────────────────────────────────────────────────────
+  // 3 variants rotated by setIndex so the matrix has visual variety.
+  const variants = ['banner-bottom', 'hero-right', 'cluster-left'] as const;
+  const variant = variants[setIndex % variants.length];
+
+  const composites: sharp.OverlayOptions[] = [];
+
+  // Bold-font-safe charRatio (covers Arial-Bold's wider glyphs).
+  const HEAD_CHAR_RATIO = 0.68;
+  const SUB_CHAR_RATIO  = 0.56;
+  const HEAD_LH = 1.08;
+  const SUB_LH  = 1.30;
+
+  let overlay = '';
+
+  if (variant === 'banner-bottom') {
+    // Three phones fanned across the upper 70% of canvas, slightly clipping
+    // the top edge. A solid banner fills the bottom 32% with centred text.
+    const bandTop = Math.floor(height * 0.68);          // where the banner starts
+    const phoneAreaH = bandTop;                          // phones live above the banner
+    const phoneCount = Math.min(phonePaths.length, 3);
+
+    if (phoneCount > 0) {
+      // Make phones slightly taller than the phone area so the top clips —
+      // user wants more presence.
+      const baseH = Math.floor(phoneAreaH * 1.12);
+      for (let i = 0; i < phoneCount; i++) {
+        const aspect = await screenshotAspect(phonePaths[i]);
+        const sizeScale = phoneCount === 1 ? 1
+                        : (i === Math.floor(phoneCount / 2) ? 1 : 0.90);
+        const phoneH = Math.floor(baseH * sizeScale);
+        const tilts = phoneCount === 1 ? [-6]
+                    : phoneCount === 2 ? [-8, 8]
+                    : [-9, 0, 9];
+        const phone = await buildPhoneFrame(phonePaths[i], phoneH, aspect, tilts[i]);
+        const slotCx = phoneCount === 1
+          ? width / 2
+          : (width * (i + 0.5)) / phoneCount;
+        const verticalOffset = (i === Math.floor(phoneCount / 2)) ? 0 : Math.floor(height * 0.025);
+        // Bias upward so the bottom sits roughly at the banner edge with a small overlap.
+        const phoneTop = Math.round(bandTop - phone.h + Math.floor(height * 0.08) + verticalOffset);
+        const phoneLeft = Math.round(slotCx - phone.w / 2);
+        const clipped = await clipToCanvas(phone.buf, phone.w, phone.h, phoneTop, phoneLeft, width, height);
+        if (clipped) composites.push(clipped);
+      }
+    }
+
+    // Banner: full-width semi-opaque scrim at the bottom. Sized to fit the
+    // text. fitWrapped guarantees the headline+subline together fit the
+    // available vertical budget — no more vertical clipping.
+    const bannerH = height - bandTop;
+    const padX = Math.floor(width * 0.06);
+    const padY = Math.floor(bannerH * 0.16);
+    const textSafe = width - padX * 2;
+    const headHeightBudget = subline
+      ? Math.floor((bannerH - padY * 2) * 0.62)    // 62% for headline, leaves room for subline + gap
+      : (bannerH - padY * 2);
+    const head = fitWrapped(headline, textSafe, headHeightBudget,
+      Math.floor(bannerH * 0.42), HEAD_CHAR_RATIO, HEAD_LH, { maxLines: 2 });
+    const headLineH = Math.floor(head.size * HEAD_LH);
+    const totalHeadH = head.lines.length * headLineH;
+    const gap = Math.floor(bannerH * 0.08);
+    const subBudget = subline ? Math.max(0, bannerH - padY * 2 - totalHeadH - gap) : 0;
+    const sub = subline
+      ? fitWrapped(subline, textSafe, subBudget,
+          Math.floor(bannerH * 0.20), SUB_CHAR_RATIO, SUB_LH, { maxLines: 2, minSize: 18 })
+      : { lines: [] as string[], size: 0 };
+    const subLineH = sub.size ? Math.floor(sub.size * SUB_LH) : 0;
+    const totalSubH = sub.lines.length * subLineH;
+    const totalTextH = totalHeadH + (sub.lines.length ? gap + totalSubH : 0);
+    const textTop = bandTop + Math.floor((bannerH - totalTextH) / 2);
+    const cx = width / 2;
+
+    overlay = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+      ${TEXT_SHADOW_DEFS}
+      <defs>
+        <linearGradient id="bannerFade" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%"  stop-color="${scrimFill}" stop-opacity="0"/>
+          <stop offset="35%" stop-color="${scrimFill}" stop-opacity="${scrimOp}"/>
+          <stop offset="100%" stop-color="${scrimFill}" stop-opacity="${scrimOp}"/>
+        </linearGradient>
+      </defs>
+      <rect x="0" y="${bandTop - Math.floor(bannerH * 0.20)}" width="${width}" height="${bannerH + Math.floor(bannerH * 0.20)}" fill="url(#bannerFade)"/>
+      ${head.lines.map((line, i) =>
+        `<text x="${cx}" y="${textTop + (i + 1) * headLineH - Math.floor(headLineH * 0.20)}" text-anchor="middle"
+          font-family="Arial,Helvetica,sans-serif" font-size="${head.size}" font-weight="800"
+          fill="${theme.headline_color}">${escapeXml(line)}</text>`
+      ).join('\n')}
+      ${sub.lines.map((line, i) =>
+        `<text x="${cx}" y="${textTop + totalHeadH + gap + (i + 1) * subLineH - Math.floor(subLineH * 0.20)}" text-anchor="middle"
+          font-family="Arial,Helvetica,sans-serif" font-size="${sub.size}" font-weight="400"
+          fill="${theme.subheadline_color}">${escapeXml(line)}</text>`
+      ).join('\n')}
+    </svg>`;
+
+  } else if (variant === 'hero-right') {
+    // One large hero phone right-of-centre, slightly clipping the top/bottom.
+    // Two smaller phones flank it for depth. Text panel on the left half.
+    const heroH = Math.floor(height * 1.10);            // 110% of canvas → top + bottom clip
+    const phoneCount = Math.min(phonePaths.length, 3);
+
+    if (phoneCount > 0) {
+      // Hero is the FIRST (value slot) screenshot, placed centre-right.
+      const heroAspect = await screenshotAspect(phonePaths[0]);
+      const hero = await buildPhoneFrame(phonePaths[0], heroH, heroAspect, -4);
+      const heroCx = Math.floor(width * 0.74);
+      const heroClip = await clipToCanvas(
+        hero.buf, hero.w, hero.h,
+        Math.round((height - hero.h) / 2),
+        Math.round(heroCx - hero.w / 2),
+        width, height,
+      );
+      // Flanking phones, smaller and tilted further, behind the hero. Use
+      // remaining screenshots (limited to 2 more). Composited BEFORE the hero
+      // so they appear behind it.
+      const flankInfo = [
+        { sourceIdx: 1, cxFrac: 0.92, tilt: 12, scale: 0.78 },
+        { sourceIdx: 2, cxFrac: 0.60, tilt: -10, scale: 0.72 },
+      ];
+      for (const fl of flankInfo) {
+        if (fl.sourceIdx >= phoneCount) continue;
+        const aspect = await screenshotAspect(phonePaths[fl.sourceIdx]);
+        const ph = Math.floor(heroH * fl.scale);
+        const phone = await buildPhoneFrame(phonePaths[fl.sourceIdx], ph, aspect, fl.tilt);
+        const cClip = await clipToCanvas(
+          phone.buf, phone.w, phone.h,
+          Math.round((height - phone.h) / 2 + Math.floor(height * 0.05)),
+          Math.round(width * fl.cxFrac - phone.w / 2),
+          width, height,
+        );
+        if (cClip) composites.push(cClip);
+      }
+      // Hero on top.
+      if (heroClip) composites.push(heroClip);
+    }
+
+    // Left text panel. The panel sizes itself to the content (height grows
+    // with the wrapped headline); fitWrapped picks the largest font where
+    // both width and height fit within reasonable bounds.
+    const padX = Math.floor(width * 0.03);
+    const padY = Math.floor(height * 0.06);
+    const panelW = Math.floor(width * 0.48);
+    const textSafe = panelW - padX * 2;
+    // Headline can use up to ~62% of the canvas vertically inside the panel
+    // (panel grows to fit). Allow up to 3 lines for better thumbnail size.
+    const head = fitWrapped(headline, textSafe, Math.floor(height * 0.62),
+      Math.floor(height * 0.22), HEAD_CHAR_RATIO, HEAD_LH, { maxLines: 3 });
+    const headLineH = Math.floor(head.size * HEAD_LH);
+    const totalHeadH = head.lines.length * headLineH;
+    const gap = Math.floor(height * 0.035);
+    const sub = subline
+      ? fitWrapped(subline, textSafe, Math.floor(height * 0.20),
+          Math.floor(height * 0.09), SUB_CHAR_RATIO, SUB_LH, { maxLines: 2, minSize: 18 })
+      : { lines: [] as string[], size: 0 };
+    const subLineH = sub.size ? Math.floor(sub.size * SUB_LH) : 0;
+    const totalSubH = sub.lines.length * subLineH;
+    const totalTextH = totalHeadH + (sub.lines.length ? gap + totalSubH : 0);
+    const panelH = Math.min(height - SAFE * 2, totalTextH + padY * 2);
+    const panelX = SAFE;
+    const panelY = Math.floor((height - panelH) / 2);
+    const panelR = Math.floor(Math.min(panelW, panelH) * 0.08);
+    const textLeft = panelX + padX;
+
+    overlay = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+      ${TEXT_SHADOW_DEFS}
+      <defs>
+        <filter id="panelShadow" x="-10%" y="-10%" width="120%" height="140%">
+          <feDropShadow dx="0" dy="8" stdDeviation="14" flood-opacity="0.32"/>
+        </filter>
+      </defs>
+      <rect x="${panelX}" y="${panelY}" width="${panelW}" height="${panelH}" rx="${panelR}" ry="${panelR}"
+        fill="${scrimFill}" fill-opacity="${scrimOp}" filter="url(#panelShadow)"/>
+      ${head.lines.map((line, i) =>
+        `<text x="${textLeft}" y="${panelY + padY + (i + 1) * headLineH - Math.floor(headLineH * 0.20)}"
+          font-family="Arial,Helvetica,sans-serif" font-size="${head.size}" font-weight="800"
+          fill="${theme.headline_color}">${escapeXml(line)}</text>`
+      ).join('\n')}
+      ${sub.lines.map((line, i) =>
+        `<text x="${textLeft}" y="${panelY + padY + totalHeadH + gap + (i + 1) * subLineH - Math.floor(subLineH * 0.20)}"
+          font-family="Arial,Helvetica,sans-serif" font-size="${sub.size}" font-weight="400"
+          fill="${theme.subheadline_color}">${escapeXml(line)}</text>`
+      ).join('\n')}
+    </svg>`;
+
+  } else {  // cluster-left
+    // 2 overlapping phones on the left, text panel on the right.
+    const phoneCount = Math.min(phonePaths.length, 2);
+    const baseH = Math.floor(height * 1.06);
+
+    if (phoneCount > 0) {
+      // Front phone (slot 0) sits left-centre, slight tilt.
+      const aspect0 = await screenshotAspect(phonePaths[0]);
+      const front = await buildPhoneFrame(phonePaths[0], baseH, aspect0, -6);
+      const frontCx = Math.floor(width * 0.22);
+      const frontClip = await clipToCanvas(
+        front.buf, front.w, front.h,
+        Math.round((height - front.h) / 2),
+        Math.round(frontCx - front.w / 2),
+        width, height,
+      );
+      if (phoneCount > 1) {
+        // Back phone behind + offset, tilted opposite (compose first so it
+        // sits behind the front phone).
+        const aspect1 = await screenshotAspect(phonePaths[1]);
+        const backH = Math.floor(baseH * 0.86);
+        const back  = await buildPhoneFrame(phonePaths[1], backH, aspect1, 8);
+        const backCx = Math.floor(width * 0.36);
+        const backClip = await clipToCanvas(
+          back.buf, back.w, back.h,
+          Math.round((height - back.h) / 2 + Math.floor(height * 0.03)),
+          Math.round(backCx - back.w / 2),
+          width, height,
+        );
+        if (backClip) composites.push(backClip);
+      }
+      if (frontClip) composites.push(frontClip);
+    }
+
+    // Right text panel — same fitting model as hero-right.
+    const padX = Math.floor(width * 0.03);
+    const padY = Math.floor(height * 0.06);
+    const panelW = Math.floor(width * 0.48);
+    const textSafe = panelW - padX * 2;
+    const head = fitWrapped(headline, textSafe, Math.floor(height * 0.62),
+      Math.floor(height * 0.22), HEAD_CHAR_RATIO, HEAD_LH, { maxLines: 3 });
+    const headLineH = Math.floor(head.size * HEAD_LH);
+    const totalHeadH = head.lines.length * headLineH;
+    const gap = Math.floor(height * 0.035);
+    const sub = subline
+      ? fitWrapped(subline, textSafe, Math.floor(height * 0.20),
+          Math.floor(height * 0.09), SUB_CHAR_RATIO, SUB_LH, { maxLines: 2, minSize: 18 })
+      : { lines: [] as string[], size: 0 };
+    const subLineH = sub.size ? Math.floor(sub.size * SUB_LH) : 0;
+    const totalSubH = sub.lines.length * subLineH;
+    const totalTextH = totalHeadH + (sub.lines.length ? gap + totalSubH : 0);
+    const panelH = Math.min(height - SAFE * 2, totalTextH + padY * 2);
+    const panelX = width - panelW - SAFE;
+    const panelY = Math.floor(height * 0.58 - panelH / 2);  // slightly below centre
+    const panelR = Math.floor(Math.min(panelW, panelH) * 0.08);
+    const textLeft = panelX + padX;
+
+    overlay = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+      ${TEXT_SHADOW_DEFS}
+      <defs>
+        <filter id="panelShadow" x="-10%" y="-10%" width="120%" height="140%">
+          <feDropShadow dx="0" dy="8" stdDeviation="14" flood-opacity="0.32"/>
+        </filter>
+      </defs>
+      <rect x="${panelX}" y="${panelY}" width="${panelW}" height="${panelH}" rx="${panelR}" ry="${panelR}"
+        fill="${scrimFill}" fill-opacity="${scrimOp}" filter="url(#panelShadow)"/>
+      ${head.lines.map((line, i) =>
+        `<text x="${textLeft}" y="${panelY + padY + (i + 1) * headLineH - Math.floor(headLineH * 0.20)}"
+          font-family="Arial,Helvetica,sans-serif" font-size="${head.size}" font-weight="800"
+          fill="${theme.headline_color}">${escapeXml(line)}</text>`
+      ).join('\n')}
+      ${sub.lines.map((line, i) =>
+        `<text x="${textLeft}" y="${panelY + padY + totalHeadH + gap + (i + 1) * subLineH - Math.floor(subLineH * 0.20)}"
+          font-family="Arial,Helvetica,sans-serif" font-size="${sub.size}" font-weight="400"
+          fill="${theme.subheadline_color}">${escapeXml(line)}</text>`
+      ).join('\n')}
+    </svg>`;
+  }
+
   composites.push({ input: Buffer.from(overlay), top: 0, left: 0 });
 
   const outPath = path.join(outputDir, 'google-play', 'feature-graphic.png');
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   // Output as 24-bit PNG (no alpha) — Play rejects transparency on this asset.
-  await sharp(bg).composite(composites).flatten({ background: '#000000' }).png().toFile(outPath);
+  // flatten() blends any transparency into the theme bg; removeAlpha() then
+  // strips the channel byte so the encoded PNG is genuinely 24-bit (sharp's
+  // .png() can otherwise emit a 32-bit PNG with all-opaque alpha, which some
+  // tools — and Play's stricter validator — still flag as "has alpha").
+  await sharp(bg)
+    .composite(composites)
+    .flatten({ background: theme.bg_from })
+    .removeAlpha()
+    .png()
+    .toFile(outPath);
   console.log(`  ✓  feature-graphic.png (${width}×${height})`);
+}
+
+function isLightHex(hex: string): boolean {
+  // Relative luminance check. > 0.55 = light, panel needs to darken.
+  // Accepts "#rrggbb", "#rgb", or "rgba(...)" (falls through as light).
+  const m = /^#([0-9a-f]{6})$/i.exec(hex);
+  if (!m) {
+    const short = /^#([0-9a-f]{3})$/i.exec(hex);
+    if (!short) return true;
+    const r = parseInt(short[1][0] + short[1][0], 16);
+    const g = parseInt(short[1][1] + short[1][1], 16);
+    const b = parseInt(short[1][2] + short[1][2], 16);
+    return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.55;
+  }
+  const r = parseInt(m[1].substring(0, 2), 16);
+  const g = parseInt(m[1].substring(2, 4), 16);
+  const b = parseInt(m[1].substring(4, 6), 16);
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.55;
+}
+
+// Crop an overlay buffer to the canvas intersection so it can be composited
+// even when the intended (top, left) position would place part of it outside
+// the canvas. Sharp's composite rejects out-of-bounds layers; this helper
+// keeps the "phone clipping the canvas edge" effect achievable.
+async function clipToCanvas(
+  buf: Buffer,
+  bufW: number,
+  bufH: number,
+  top: number,
+  left: number,
+  canvasW: number,
+  canvasH: number,
+): Promise<{ input: Buffer; top: number; left: number } | null> {
+  const x0 = Math.max(left, 0);
+  const y0 = Math.max(top, 0);
+  const x1 = Math.min(left + bufW, canvasW);
+  const y1 = Math.min(top + bufH, canvasH);
+  if (x1 <= x0 || y1 <= y0) return null;       // entirely off-canvas
+  if (x0 === left && y0 === top && x1 === left + bufW && y1 === top + bufH) {
+    return { input: buf, top, left };          // no clip needed
+  }
+  const cropped = await sharp(buf)
+    .extract({ left: x0 - left, top: y0 - top, width: x1 - x0, height: y1 - y0 })
+    .png()
+    .toBuffer();
+  return { input: cropped, top: y0, left: x0 };
+}
+
+// Render a device-framed phone screenshot at 2× then downscale with lanczos3
+// for crisp rotation. Returns the final buffer and its post-rotate dims.
+async function buildPhoneFrame(
+  phonePath: string,
+  phoneH: number,
+  aspect: number,
+  tilt: number,
+): Promise<{ buf: Buffer; w: number; h: number }> {
+  const phoneW = Math.max(40, Math.round(phoneH / aspect));
+  const frame = await makeDeviceFrame(phonePath, phoneW * 2, phoneH * 2, 0, 0, 'top', 'cover');
+  const downsized = await sharp(frame)
+    .resize(phoneW, phoneH, { kernel: sharp.kernel.lanczos3 })
+    .png()
+    .toBuffer();
+  if (tilt === 0) return { buf: downsized, w: phoneW, h: phoneH };
+  const tilted = await sharp(downsized)
+    .rotate(tilt, { background: { r: 0, g: 0, b: 0, alpha: 0 } })
+    .png()
+    .toBuffer();
+  const meta = await sharp(tilted).metadata();
+  return { buf: tilted, w: meta.width ?? phoneW, h: meta.height ?? phoneH };
 }
 
 function wrapByLen(text: string, target: number): string[] {
@@ -857,7 +1199,16 @@ async function main() {
             const outPath = path.join(outDir, ...segments, outSubDir, `${ss.id}.png`);
 
             fs.mkdirSync(path.dirname(outPath), { recursive: true });
-            await sharp(rendered).png().toFile(outPath);
+            // Strip alpha before write — Play and App Store reject store
+            // assets with transparency. flatten() blends thin alpha edges
+            // with the theme bg; removeAlpha() then drops the channel byte
+            // so the encoded PNG is genuinely 24-bit (some tools still flag
+            // 32-bit-with-all-opaque-alpha PNGs as "has alpha").
+            await sharp(rendered)
+              .flatten({ background: set.theme.bg_from })
+              .removeAlpha()
+              .png()
+              .toFile(outPath);
             console.log(`  ✓  ${path.relative(args.projectRoot, outPath)}`);
 
             // Record for manifest. Path is relative to the release folder (one
@@ -898,7 +1249,7 @@ async function main() {
           const localeOutDir = path.join(outDir, ...segments);
           await buildFeatureGraphic(
             args, cache, provider, model, apiKey, spec, config, localeOutDir, quality,
-            set.theme, set, bgBucket, appContext,
+            set.theme, set, bgBucket, appContext, sets.indexOf(set),
           );
 
           // Record feature graphic in the manifest

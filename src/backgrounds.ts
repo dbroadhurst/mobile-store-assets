@@ -16,14 +16,34 @@ export async function renderBackground(
 }
 
 function svgFor(style: BackgroundStyle, t: Theme, w: number, h: number, tokens: string[]): string {
+  // Every CSS style gets a thin motif scatter so the matrix never feels generic.
+  // `app-motif` carries a dense scatter inline; the other styles get a sparser,
+  // fainter overlay that preserves the style's primary aesthetic. Scatter is
+  // skipped when the app has no matched motifs (falls through to abstract).
   switch (style) {
-    case 'gradient':   return gradientSvg(t, w, h);
-    case 'mesh':       return meshSvg(t, w, h);
-    case 'bokeh':      return bokehSvg(t, w, h);
-    case 'geometric':  return geometricSvg(t, w, h);
-    case 'minimal':    return minimalSvg(t, w, h);
+    case 'gradient':   return overlayMotif(gradientSvg(t, w, h),  t, w, h, tokens, 'sparse');
+    case 'mesh':       return overlayMotif(meshSvg(t, w, h),      t, w, h, tokens, 'sparse');
+    case 'bokeh':      return overlayMotif(bokehSvg(t, w, h),     t, w, h, tokens, 'sparse');
+    case 'geometric':  return overlayMotif(geometricSvg(t, w, h), t, w, h, tokens, 'sparse');
+    case 'minimal':    return overlayMotif(minimalSvg(t, w, h),   t, w, h, tokens, 'sparse');
     case 'app-motif':  return appMotifSvg(t, w, h, tokens);
   }
+}
+
+// Inject a motif scatter group right before the closing </svg>. Sparse mode
+// (8 glyphs, opacity 0.04–0.08) is for "primary aesthetic" styles. Dense mode
+// matches the standalone app-motif renderer.
+function overlayMotif(
+  baseSvg: string,
+  t: Theme,
+  w: number,
+  h: number,
+  tokens: string[],
+  density: 'sparse' | 'dense',
+): string {
+  const fragment = motifScatterFragment(t, w, h, tokens, density);
+  if (!fragment) return baseSvg;
+  return baseSvg.replace(/<\/svg>\s*$/, `${fragment}</svg>`);
 }
 
 // Diagonal linear gradient from bg_from → bg_to.
@@ -198,6 +218,33 @@ const MOTIF_GLYPHS: Record<string, string[]> = {
     // Apple
     'M50,30 C30,30 22,46 30,64 C36,78 48,84 50,80 C52,84 64,78 70,64 C78,46 70,30 50,30 Z M50,30 L52,18 L60,12',
   ],
+  civics: [
+    // Five-pointed star
+    'M50,10 L60,40 L92,40 L66,58 L76,88 L50,68 L24,88 L34,58 L8,40 L40,40 Z',
+    // Stylised flag with stars (rectangle + star canton)
+    'M10,20 L90,20 L90,80 L10,80 Z M10,20 L50,20 L50,50 L10,50 Z M22,28 L25,34 L31,34 L26,38 L28,44 L22,40 L16,44 L18,38 L13,34 L19,34 Z',
+    // Ballot box with slot + ballot peeking out
+    'M15,40 L85,40 L85,86 L15,86 Z M30,30 L70,30 L70,42 L30,42 Z M40,22 L60,22 L60,32 L40,32 Z',
+    // Capitol-dome silhouette
+    'M50,10 a25,18 0 0,0 -25,18 L25,40 L20,40 L20,50 L80,50 L80,40 L75,40 L75,28 a25,18 0 0,0 -25,-18 Z M30,50 L30,86 L70,86 L70,50 Z',
+    // Scroll
+    'M14,20 a8,12 0 0,0 0,24 L86,44 a8,12 0 0,0 0,-24 Z M14,20 a8,12 0 0,1 0,24 L14,72 a8,12 0 0,0 0,24 L78,96 a8,12 0 0,0 0,-24 L78,44',
+  ],
+  news: [
+    'M10,18 L72,18 L72,86 L10,86 Z M10,18 L72,18 L78,24 L78,86 L10,86 Z M18,28 L64,28 L64,34 L18,34 Z M18,40 L40,40 L40,72 L18,72 Z M44,40 L64,40 L64,46 L44,46 Z M44,52 L64,52 L64,58 L44,58 Z M44,64 L64,64 L64,70 L44,70 Z',
+  ],
+  productivity: [
+    // Checklist
+    'M14,20 L86,20 L86,28 L14,28 Z M14,38 L86,38 L86,46 L14,46 Z M14,56 L86,56 L86,64 L14,64 Z M14,74 L86,74 L86,82 L14,82 Z M18,22 L26,30 L40,16 L34,12 L26,20 L22,16 Z',
+    // Grid
+    'M10,10 L90,10 L90,90 L10,90 Z M10,30 L90,30 M10,50 L90,50 M10,70 L90,70 M30,10 L30,90 M50,10 L50,90 M70,10 L70,90',
+  ],
+  social: [
+    // Speech bubble
+    'M14,20 a10,10 0 0,1 10,-10 L76,10 a10,10 0 0,1 10,10 L86,60 a10,10 0 0,1 -10,10 L40,70 L24,86 L24,70 a10,10 0 0,1 -10,-10 Z',
+    // Connected nodes
+    'M20,30 a10,10 0 1,0 0,1 Z M75,25 a10,10 0 1,0 0,1 Z M50,70 a10,10 0 1,0 0,1 Z M28,38 L48,62 M70,32 L54,62',
+  ],
   abstract: [
     // Soft circle
     'M50,14 a36,36 0 1,0 0,72 a36,36 0 1,0 0,-72 M50,26 a24,24 0 1,0 0,48 a24,24 0 1,0 0,-48',
@@ -209,38 +256,9 @@ const MOTIF_GLYPHS: Record<string, string[]> = {
 };
 
 function appMotifSvg(t: Theme, w: number, h: number, tokens: string[]): string {
-  // Build the active glyph pool: matched tokens, falling back to abstract.
-  const activeTokens = tokens.length ? tokens : ['abstract'];
-  const glyphPool: string[] = [];
-  for (const tk of activeTokens) {
-    const g = MOTIF_GLYPHS[tk] ?? MOTIF_GLYPHS.abstract;
-    glyphPool.push(...g);
-  }
-
-  // Deterministic scatter — 16 instances spread across the canvas at varied
-  // sizes, rotations, and opacities. The pattern stays consistent within a
-  // theme so re-renders are identical.
-  const base = Math.min(w, h) * 0.18;
-  const positions: Array<[number, number]> = [
-    [0.08, 0.08], [0.32, 0.04], [0.62, 0.10], [0.88, 0.06],
-    [0.04, 0.28], [0.22, 0.38], [0.78, 0.30], [0.94, 0.42],
-    [0.10, 0.58], [0.30, 0.62], [0.70, 0.66], [0.90, 0.60],
-    [0.06, 0.86], [0.28, 0.92], [0.56, 0.88], [0.82, 0.92],
-  ];
-
-  const glyphs = positions.map(([fx, fy], i) => {
-    const sizeJitter = 0.65 + (i % 5) * 0.12;            // 0.65..1.13
-    const size = base * sizeJitter;
-    const rot = ((i * 53) % 60) - 30;                    // −30..+30 deg
-    const op = 0.05 + (i % 3) * 0.025;                   // 0.05..0.10
-    const glyph = glyphPool[i % glyphPool.length];
-    const cx = fx * w;
-    const cy = fy * h;
-    const half = size / 2;
-    return `<g transform="translate(${cx - half},${cy - half}) rotate(${rot} ${half} ${half}) scale(${size / 100})"
-      opacity="${op}" fill="${t.headline_color}" fill-rule="evenodd"><path d="${glyph}"/></g>`;
-  }).join('\n');
-
+  // App-motif style: gradient base + dense motif scatter (the dedicated
+  // app-themed style; sets that pick this get the strongest glyph density).
+  const glyphs = motifScatterFragment(t, w, h, tokens, 'dense') ?? '';
   return `<svg width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg">
     <defs>
       <linearGradient id="amBg" x1="0" y1="0" x2="0" y2="1">
@@ -251,6 +269,58 @@ function appMotifSvg(t: Theme, w: number, h: number, tokens: string[]): string {
     <rect width="${w}" height="${h}" fill="url(#amBg)"/>
     ${glyphs}
   </svg>`;
+}
+
+// Deterministic scatter of motif glyphs across the canvas. Returns null when
+// the app has no matched tokens AND no useful fallback is wanted (caller can
+// choose to skip rendering entirely). Sparse mode is for "primary aesthetic"
+// background styles; dense mode is for the app-motif style itself.
+function motifScatterFragment(
+  t: Theme,
+  w: number,
+  h: number,
+  tokens: string[],
+  density: 'sparse' | 'dense',
+): string | null {
+  // Sparse mode skips when the app has no matched motifs — keeps gradient /
+  // mesh / bokeh pure when the regex haystack is empty. Dense mode always
+  // renders (the app-motif style is supposed to show *something*).
+  if (tokens.length === 0 && density === 'sparse') return null;
+  const activeTokens = tokens.length ? tokens : ['abstract'];
+  const glyphPool: string[] = [];
+  for (const tk of activeTokens) {
+    const g = MOTIF_GLYPHS[tk] ?? MOTIF_GLYPHS.abstract;
+    glyphPool.push(...g);
+  }
+
+  const cfg = density === 'dense'
+    ? { sizeBase: 0.18, opMin: 0.05, opStep: 0.025, count: 16 }
+    : { sizeBase: 0.14, opMin: 0.04, opStep: 0.020, count: 8  };
+  const base = Math.min(w, h) * cfg.sizeBase;
+
+  // Position grid; sparse mode picks every other position for an airier feel.
+  const positionsDense: Array<[number, number]> = [
+    [0.08, 0.08], [0.32, 0.04], [0.62, 0.10], [0.88, 0.06],
+    [0.04, 0.28], [0.22, 0.38], [0.78, 0.30], [0.94, 0.42],
+    [0.10, 0.58], [0.30, 0.62], [0.70, 0.66], [0.90, 0.60],
+    [0.06, 0.86], [0.28, 0.92], [0.56, 0.88], [0.82, 0.92],
+  ];
+  const positions = density === 'dense'
+    ? positionsDense
+    : positionsDense.filter((_, i) => i % 2 === 0);
+
+  return positions.map(([fx, fy], i) => {
+    const sizeJitter = 0.65 + (i % 5) * 0.12;             // 0.65..1.13
+    const size = base * sizeJitter;
+    const rot = ((i * 53) % 60) - 30;                     // −30..+30 deg
+    const op = cfg.opMin + (i % 3) * cfg.opStep;
+    const glyph = glyphPool[i % glyphPool.length];
+    const cx = fx * w;
+    const cy = fy * h;
+    const half = size / 2;
+    return `<g transform="translate(${cx - half},${cy - half}) rotate(${rot} ${half} ${half}) scale(${size / 100})"
+      opacity="${op}" fill="${t.headline_color}" fill-rule="evenodd"><path d="${glyph}"/></g>`;
+  }).join('\n');
 }
 
 // Flat color with subtle vignette for legibility.

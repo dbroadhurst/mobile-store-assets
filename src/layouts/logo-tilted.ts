@@ -36,8 +36,11 @@ export async function logoTilted(input: LayoutInput): Promise<Buffer> {
       font-size="${headlineSz}" font-weight="900" fill="${theme.headline_color}">${escapeXml(line)}</text>`
   ).join('\n');
 
-  // App icon top-left
-  const iconSize = Math.floor(W * 0.07);
+  // App icon top-left — 10.5% of canvas width. Reads as a confident brand
+  // mark at thumbnail size without competing with the headline. (Bumped from
+  // 7% on review feedback — the smaller chip was reading as decorative noise
+  // rather than a brand cue.)
+  const iconSize = Math.floor(W * 0.105);
   const iconY    = Math.floor(H * 0.08);
   const iconPath = path.join(projectRoot, config.app.icon);
   let iconComposite: sharp.OverlayOptions | null = null;

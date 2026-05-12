@@ -1,12 +1,14 @@
 ---
 name: store-assets
 description: >
-  Render the App Store / Google Play test matrix from spec.yaml. By default
-  produces ABCD sets — multiple internally-coherent listing variants — using
-  CSS/SVG composition (free, instant, deterministic). Optional --use-ai-bg
-  routes background generation through Imagen / gpt-image-1 for photographic
-  textures. Run /store-spec first to author the matrix.
-argument-hint: "[version] [--sets N|A,B,C] [--platform p1,p2|all] [--locales en-US,...] [--include-6.5] [--use-ai-bg] [--provider openai|google] [--regen id|all] [--dry-run] [--images-only] [--text-only]"
+  Render the App Store / Google Play test matrix from spec.yaml. Produces
+  ABCD sets — multiple internally-coherent listing variants. Backgrounds use
+  Imagen / gpt-image-1 by default when an `OPENAI_API_KEY` or
+  `GOOGLE_AI_API_KEY` is present in marketing/.env.local; falls back to
+  deterministic CSS/SVG composition (free, instant) when no key is found.
+  Force either path with --css-bg / --use-ai-bg. Run /store-spec first to
+  author the matrix.
+argument-hint: "[version] [--sets N|A,B,C] [--platform p1,p2|all] [--locales en-US,...] [--include-6.5] [--css-bg | --use-ai-bg] [--provider openai|google] [--regen id|all] [--dry-run] [--images-only] [--text-only]"
 allowed-tools: Read Write Bash
 ---
 
@@ -40,10 +42,12 @@ Arguments: $ARGUMENTS
   `--include-6.7` (iPhone 6.7", 1290×2796), `--include-6.5` (iPhone 6.5", 1242×2688), `--include-12.9` (iPad Pro 12.9" alias), `--include-7-tablet` (Android 7" tablet, 1200×1920), `--include-wear` (Wear OS, 384×384), `--include-tv-banner` (Android TV banner, 1280×720)
 - **`--include-all`** — turn on every opt-in platform in one go (the maximal asset bundle).
 - `--locales en-US,fr-FR,...` — render per-locale variants. Each (locale × set) gets its own subfolder.
-- `--use-ai-bg` — route background generation through Imagen / gpt-image-1 instead of CSS/SVG. Slow, costs API credits, requires `OPENAI_API_KEY` or `GOOGLE_AI_API_KEY` in `marketing/.env.local`. CSS/SVG is the default.
-- `--provider openai|google` — force a provider when both keys are present (only matters with `--use-ai-bg`).
-- `--regen <id|id1,id2|all>` — bypass the AI cache for the listed ids. Only relevant with `--use-ai-bg`.
-- `--dry-run` — same as a live run but never calls the AI provider; CSS/SVG always renders. Good for free iteration.
+- **Background mode is auto-detected.** When `OPENAI_API_KEY` or `GOOGLE_AI_API_KEY` is present in `marketing/.env.local`, AI backgrounds (Imagen / gpt-image-1) are used — these carry app-themed motifs derived from `app.category`, `aso.positioning`, `aso.primary_keywords`, and `spec.hint`. When no key is present, the CLI falls back to deterministic CSS/SVG composition. The user can override with the flags below.
+- `--use-ai-bg` — force AI even when auto-detect would have chosen CSS (errors if no key is set).
+- `--css-bg` — force CSS/SVG even when keys are present (offline / cost-free re-renders).
+- `--provider openai|google` — force a provider when both keys are present.
+- `--regen <id|id1,id2|all>` — bypass the AI background disk cache for the listed theme / set ids. Only relevant when AI mode is active.
+- `--dry-run` — same as a live run but never calls the AI provider; CSS/SVG renders only. Good for free iteration.
 - `--images-only` — skip writing store-listing.md files.
 - `--text-only` — skip image generation.
 

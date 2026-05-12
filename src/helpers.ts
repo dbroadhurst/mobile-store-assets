@@ -15,6 +15,132 @@ export function fitText(text: string, maxWidth: number, preferred: number, charR
   return Math.max(12, Math.min(preferred, maxByWidth));
 }
 
+/**
+ * Fit a multi-line text block to BOTH width and height bounds. Returns the
+ * largest fontSize where:
+ *   - the longest line's width  ≤ maxW (lineLen × fontSize × charRatio)
+ *   - the full block's height   ≤ maxH (lines × fontSize × lineHeightRatio)
+ *
+ * Use this whenever the text has a fixed container (panel, banner, caption
+ * area below a phone). Plain `fitText` only checks width and lets multi-line
+ * blocks overflow.
+ */
+export function fitTextBlock(
+  lines: string[],
+  maxW: number,
+  maxH: number,
+  preferred: number,
+  charRatio = 0.58,
+  lineHeightRatio = 1.08,
+): number {
+  if (lines.length === 0) return preferred;
+  const longest = lines.reduce((a, b) => a.length > b.length ? a : b, '');
+  const lineLen = Math.max(1, longest.length);
+  const maxByWidth  = Math.floor(maxW / (lineLen * charRatio));
+  const maxByHeight = Math.floor(maxH / (lines.length * lineHeightRatio));
+  return Math.max(10, Math.min(preferred, maxByWidth, maxByHeight));
+}
+
+// Words that should never end a line — leaving them dangling reads badly:
+// "Pass the / Citizenship Test", "Become a / citizen". The smart wrapper
+// tries multiple wrap targets and picks one without orphan endings.
+const ORPHAN_WORDS = new Set([
+  'a', 'an', 'the', 'and', 'or', 'but', 'for', 'nor', 'so', 'yet',
+  'with', 'to', 'of', 'in', 'on', 'at', 'by', 'as', 'is', 'are',
+  'was', 'were', 'be', 'been', 'from', 'into', 'onto', 'over', 'under',
+  'my', 'your', 'our', 'their', 'his', 'her',
+]);
+
+function greedyWrap(words: string[], target: number): string[] {
+  const lines: string[] = [];
+  let cur = '';
+  for (const w of words) {
+    const next = cur ? `${cur} ${w}` : w;
+    if (next.length > target && cur) { lines.push(cur); cur = w; } else { cur = next; }
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
+function endsOnOrphan(line: string): boolean {
+  const last = line.split(/\s+/).filter(Boolean).pop();
+  return !!last && ORPHAN_WORDS.has(last.toLowerCase());
+}
+
+/**
+ * Greedy wrap with orphan-word avoidance and a HARD max-lines cap. Tries the
+ * given target plus nearby widths; returns the first result that:
+ *   1. fits within maxLines
+ *   2. has no orphan-word line ending (except possibly the last line)
+ *
+ * Returns `null` if no wrap target succeeds at fitting all the words into
+ * `maxLines` lines. Callers must handle null (typically by retrying with a
+ * higher maxLines). This avoids the silent-truncation bug where forcing
+ * maxLines on an over-long string returned just the first slice of words.
+ */
+export function wrapSmart(text: string, target: number, maxLines: number): string[] | null {
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return [];
+  const candidates = [target, target - 2, target + 2, target - 4, target + 4, target - 6, target + 6, target - 8, target + 8]
+    .filter(t => t >= 4);
+  let fallback: string[] | null = null;
+  for (const t of candidates) {
+    const lines = greedyWrap(words, t);
+    if (lines.length > maxLines) continue;
+    if (!fallback) fallback = lines;
+    const dangling = lines.slice(0, -1).some(endsOnOrphan);
+    if (!dangling) return lines;
+  }
+  return fallback;   // null if nothing fit within maxLines
+}
+
+/**
+ * Pick the (wrap-target × line-count) combination that produces the LARGEST
+ * fitting font size for a fixed container. Use this when the text/container
+ * relationship matters more than honouring an exact line count — e.g.
+ * feature-graphic panels where shrinking text to 30 px is worse than wrapping
+ * to 3 lines at 70 px.
+ *
+ * Returns the chosen lines and the fitted fontSize.
+ */
+export function fitWrapped(
+  text: string,
+  maxW: number,
+  maxH: number,
+  preferred: number,
+  charRatio: number,
+  lineHeightRatio: number,
+  opts: { minSize?: number; maxLines?: number; targets?: number[] } = {},
+): { lines: string[]; size: number } {
+  const minSize  = opts.minSize  ?? Math.floor(preferred * 0.45);
+  const maxLines = opts.maxLines ?? 3;
+  const targets  = opts.targets  ?? [14, 18, 22, 26, 30];
+
+  let best: { lines: string[]; size: number } | null = null;
+  let anyFit: { lines: string[]; size: number } | null = null;
+  for (const lc of [1, 2, 3].filter(l => l <= maxLines)) {
+    for (const tgt of targets) {
+      const lines = wrapSmart(text, tgt, lc);
+      if (!lines || lines.length !== lc) continue;   // wrap didn't fit at this line count
+      const size = fitTextBlock(lines, maxW, maxH, preferred, charRatio, lineHeightRatio);
+      const candidate = { lines, size };
+      if (!anyFit || size > anyFit.size) anyFit = candidate;
+      if (size < minSize) continue;
+      if (!best || size > best.size) best = candidate;
+    }
+  }
+  if (best) return best;
+  if (anyFit) return anyFit;
+  // Last resort: wrap as wide as we need to fit in maxLines (no orphan guard,
+  // largest target). Guarantees no content is lost.
+  let fallback: string[] | null = null;
+  for (const tgt of [...targets].sort((a, b) => b - a).concat([60, 80, 120])) {
+    fallback = wrapSmart(text, tgt, maxLines);
+    if (fallback && fallback.length <= maxLines) break;
+  }
+  const lines = fallback ?? [text];
+  return { lines, size: fitTextBlock(lines, maxW, maxH, preferred, charRatio, lineHeightRatio) };
+}
+
 // Round corners via SVG mask. ensureAlpha avoids black corner fringing.
 export async function roundCorners(buf: Buffer, w: number, h: number, r: number): Promise<Buffer> {
   const mask = Buffer.from(
