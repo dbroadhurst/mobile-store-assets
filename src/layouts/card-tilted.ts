@@ -3,8 +3,10 @@ import { escapeXml, fitText, makeDeviceFrame, resizeBg, rotateBuffer, stripBrack
 import type { LayoutInput } from '../types.js';
 
 // Layout 07 — CARD + TILTED PHONE  (Sora)
-// White rounded card with caption + trust badge in upper area; tilted phone
-// overlaps the card's lower-right corner. Faded watermark text behind everything.
+// Wide white rounded card with caption (and optional trust badge); tilted
+// phone is anchored BELOW the card and overlaps just the card's bottom-
+// padding strip on the lower-right. Text uses the full card width and is
+// never covered by the screenshot.
 export async function cardTilted(input: LayoutInput): Promise<Buffer> {
   const { background, screenshotPath, screenshot, theme, targetWidth: W, targetHeight: H } = input;
   const bg = await resizeBg(background, W, H);
@@ -16,36 +18,40 @@ export async function cardTilted(input: LayoutInput): Promise<Buffer> {
   // every screenshot. The card + tilted phone carry the visual identity.)
   const watermarkSvg = '';
 
-  // Card dimensions and position. Card height is now derived from the actual
-  // content height + padding (was a fixed H*0.34 which left huge negative
-  // space below the trust badge on long-aspect canvases).
+  // Card dimensions and position. Card height is derived from the actual
+  // content height + padding so the card never has dead space below the copy.
   const cardW = Math.floor(W * 0.78);
   const cardX = Math.floor(W * 0.08);
-  const cardY = Math.floor(H * 0.16);
+  const cardY = Math.floor(H * 0.13);
   const cardRadius = Math.floor(W * 0.06);
   const cardPad = Math.floor(W * 0.05);
+  const textLeft = cardX + cardPad;
+  const textColW = cardW - cardPad * 2;
 
   // Card content: headline + subhead. (Trust badge removed by default — only
   // shows up if the user explicitly authored badge_count, matching the
   // honesty rules from the SKILL.md guardrails.)
   const headlineLines = wrap(headline, 18);
-  const headlineSz = fitText(longest(headlineLines), cardW - cardPad * 2, Math.floor(W * 0.07), 0.58);
+  const headlineSz = fitText(longest(headlineLines), textColW, Math.floor(W * 0.07), 0.58);
   const lineH = Math.floor(headlineSz * 1.15);
   const headlineY0 = cardY + cardPad;
   const headlineH  = headlineLines.length * lineH;
 
   const headlineSvg = headlineLines.map((line, i) =>
-    `<text x="${cardX + cardPad}" y="${headlineY0 + (i + 1) * lineH}" font-family="Arial,Helvetica,sans-serif"
+    `<text x="${textLeft}" y="${headlineY0 + (i + 1) * lineH}" font-family="Arial,Helvetica,sans-serif"
       font-size="${headlineSz}" font-weight="800" fill="#1A1A2E">${escapeXml(line)}</text>`
   ).join('\n');
 
-  const subSz = Math.floor(headlineSz * 0.55);
-  const subLineH = Math.floor(subSz * 1.30);
+  const subSzMax = Math.floor(headlineSz * 0.55);
   const subWrapped = wrap(screenshot.subheadline ?? '', 32);
+  const subSz = subWrapped.length
+    ? fitText(longest(subWrapped), textColW, subSzMax, 0.54)
+    : subSzMax;
+  const subLineH = Math.floor(subSz * 1.30);
   const subY  = headlineY0 + headlineH + Math.floor(H * 0.012);
   const subH  = subWrapped.length * subLineH;
   const subSvg = subWrapped.map((line, i) =>
-    `<text x="${cardX + cardPad}" y="${subY + i * subLineH + subSz * 0.85}"
+    `<text x="${textLeft}" y="${subY + i * subLineH + subSz * 0.85}"
       font-family="Arial,Helvetica,sans-serif" font-size="${subSz}" fill="#5C5170">${escapeXml(line)}</text>`
   ).join('\n');
 
@@ -67,30 +73,45 @@ export async function cardTilted(input: LayoutInput): Promise<Buffer> {
   // Auto-size card to content + padding
   const cardH = cardPad + headlineH + Math.floor(H * 0.012) + subH + badgeH + cardPad;
 
-  // Tilted phone overlapping card lower-right. Phone uses screenshot's native
-  // aspect so iPad sources render iPad-shaped, iPhone sources iPhone-shaped.
-  const phoneW = Math.floor(W * 0.55);
+  // Tilted phone anchored BELOW the card, slightly right-of-centre. Phone
+  // uses screenshot's native aspect so iPad sources render iPad-shaped,
+  // iPhone sources iPhone-shaped. Sized a touch smaller than the previous
+  // overlap version so its bottom doesn't crop excessively when the card is
+  // tall (long copy).
+  const phoneW = Math.floor(W * 0.50);
   const phoneH = Math.round(phoneW * await screenshotAspect(screenshotPath));
   const phoneFrame = await makeDeviceFrame(screenshotPath, phoneW, phoneH);
   const phoneRotated = await rotateBuffer(phoneFrame, 8);
   const phoneMeta = await sharp(phoneRotated).metadata();
 
-  // Anchor phone to overlap the card's lower-right corner. Phone top sits at
-  // ~60% of the way down the card so the card and phone interlock visibly
-  // rather than leaving a gap.
-  const phoneTop  = cardY + Math.floor(cardH * 0.60);
-  const phoneLeft = Math.floor(W * 0.40);
+  // Phone top sits inside the card's bottom-padding strip — the phone's
+  // rotated bbox tucks just under the text, so the corner interlock with the
+  // card stays visible without any chance of covering copy.
+  const phoneTop  = cardY + cardH - Math.floor(cardPad * 0.6);
+  const phoneLeft = Math.floor(W * 0.38);
   const overflow = phoneTop + phoneMeta.height! - H;
   const phoneFinal = overflow > 0
     ? await sharp(phoneRotated).extract({ left: 0, top: 0, width: phoneMeta.width!, height: H - phoneTop }).png().toBuffer()
     : phoneRotated;
 
+  // Left accent bar — unambiguous design pattern (priority indicator /
+  // category marker), sized cardPad*0.30 wide and inset slightly from the
+  // card's rounded top + bottom corners so it reads as part of the card
+  // rather than an artifact. Replaces an earlier top-strip + wash that
+  // reviewers reported as confusing ("don't understand the top of the card").
+  const barW    = Math.floor(cardPad * 0.22);
+  const barX    = cardX + Math.floor(cardPad * 0.32);
+  const barInset = Math.floor(cardRadius * 0.55);
+  const barY    = cardY + barInset;
+  const barH    = cardH - barInset * 2;
   const overlay = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
     <defs>${CARD_SHADOW_FILTER}</defs>
     ${TEXT_SHADOW_DEFS}
     ${watermarkSvg}
     <rect x="${cardX}" y="${cardY}" width="${cardW}" height="${cardH}" rx="${cardRadius}"
       fill="#FFFFFF" filter="url(#cardShadow)"/>
+    <rect x="${barX}" y="${barY}" width="${barW}" height="${barH}" rx="${Math.floor(barW / 2)}"
+      fill="${theme.accent}"/>
     ${headlineSvg}
     ${subSvg}
     ${badgeSvg}

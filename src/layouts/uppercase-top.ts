@@ -1,5 +1,5 @@
 import sharp from 'sharp';
-import { escapeXml, fitText, makeDeviceFrame, resizeBg, stripBrackets, screenshotAspect, TEXT_SHADOW_DEFS } from '../helpers.js';
+import { escapeXml, fitText, makeDeviceFrame, resizeBg, stripBrackets, screenshotAspect, wrapSmart, TEXT_SHADOW_DEFS } from '../helpers.js';
 import type { LayoutInput } from '../types.js';
 
 // Layout 03 — UPPERCASE TOP + FULL-BLEED PHONE  (Unstoppable)
@@ -15,16 +15,11 @@ export async function uppercaseTop(input: LayoutInput): Promise<Buffer> {
   const padX = Math.floor(W * 0.06);
   const safe = W - padX * 2;
 
-  // Wrap to ≤2 lines (target ~14 chars per line)
-  const words = headline.split(/\s+/).filter(Boolean);
-  const lines: string[] = [];
-  let cur = '';
-  for (const w of words) {
-    const next = cur ? `${cur} ${w}` : w;
-    if (next.length > 14 && cur) { lines.push(cur); cur = w; } else { cur = next; }
-  }
-  if (cur) lines.push(cur);
-  const finalLines = lines.slice(0, 2);
+  // Wrap to fit. Earlier this layout truncated to 2 lines, which silently
+  // dropped the tail of any 3-line headline — last word lost without warning.
+  // wrapSmart expands the wrap target until the headline fits ≤3 lines, then
+  // fitText scales the font — content integrity wins over the 2-line ideal.
+  const finalLines = wrapSmart(headline, 14, 3) ?? [headline];
   // charRatio 0.68 — bold ALL-CAPS Helvetica is wider than mixed-case
   const headlineSz = fitText(longest(finalLines), safe, Math.floor(W * 0.115), 0.68);
   const lineH = Math.floor(headlineSz * 1.05);
@@ -37,9 +32,9 @@ export async function uppercaseTop(input: LayoutInput): Promise<Buffer> {
   ).join('\n');
 
   // Subhead — placed below the rendered headline with comfortable spacing.
-  // Wrap to ≤2 lines and fit the canvas width. Without wrapping the line
-  // would overflow on long subheads (e.g. "Home loans, car finance and …").
-  const subWrapped = wrap(screenshot.subheadline ?? '', 36);
+  // Wrap to ≤3 lines and fit the canvas width; wrapSmart never silently
+  // drops content.
+  const subWrapped = wrapSmart(screenshot.subheadline ?? '', 36, 3) ?? [];
   const subSz = fitText(longest(subWrapped), safe, Math.floor(W * 0.050), 0.56);
   const subLineH = Math.floor(subSz * 1.30);
   const subY0 = headlineY0 + finalLines.length * lineH + Math.floor(H * 0.038);
@@ -91,16 +86,4 @@ export async function uppercaseTop(input: LayoutInput): Promise<Buffer> {
 
 function longest(lines: string[]): string {
   return lines.reduce((a, b) => a.length > b.length ? a : b, '');
-}
-
-function wrap(text: string, target: number): string[] {
-  const words = text.split(/\s+/).filter(Boolean);
-  const lines: string[] = [];
-  let cur = '';
-  for (const w of words) {
-    const next = cur ? `${cur} ${w}` : w;
-    if (next.length > target && cur) { lines.push(cur); cur = w; } else { cur = next; }
-  }
-  if (cur) lines.push(cur);
-  return lines.slice(0, 2);
 }

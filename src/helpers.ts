@@ -41,8 +41,8 @@ export function fitTextBlock(
   return Math.max(10, Math.min(preferred, maxByWidth, maxByHeight));
 }
 
-// Words that should never end a line — leaving them dangling reads badly:
-// "Pass the / Citizenship Test", "Become a / citizen". The smart wrapper
+// Words that should never end a line — leaving them dangling reads badly
+// (e.g. "Master the / Workout Plan" or "Become a / pro"). The smart wrapper
 // tries multiple wrap targets and picks one without orphan endings.
 const ORPHAN_WORDS = new Set([
   'a', 'an', 'the', 'and', 'or', 'but', 'for', 'nor', 'so', 'yet',
@@ -336,5 +336,11 @@ export const TEXT_SHADOW_FILTER = `<filter id="textShadow" x="-20%" y="-20%" wid
  * adaptive text-colour pick is borderline (e.g. white on mid-luminance teal).
  */
 export const TEXT_SHADOW_DEFS = `<style>
-  text { paint-order: stroke fill; stroke: rgba(0,0,0,0.45); stroke-width: 3px; stroke-linejoin: round; }
+  text {
+    paint-order: stroke fill;
+    stroke: rgba(0,0,0,0.65);
+    stroke-width: 5px;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+  }
 </style>`;

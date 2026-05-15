@@ -1,5 +1,5 @@
 import sharp from 'sharp';
-import { escapeXml, fitText, makeDeviceFrame, resizeBg, rotateBuffer, parseHeadline, screenshotAspect, TEXT_SHADOW_DEFS } from '../helpers.js';
+import { escapeXml, fitText, makeDeviceFrame, resizeBg, rotateBuffer, parseHeadline, screenshotAspect, wrapSmart, TEXT_SHADOW_DEFS } from '../helpers.js';
 import type { LayoutInput } from '../types.js';
 
 // Layout 05 — HIGHLIGHT PILL  (followit)
@@ -75,8 +75,9 @@ export async function highlightPill(input: LayoutInput): Promise<Buffer> {
     ? await sharp(phoneRotated).extract({ left: 0, top: 0, width: phoneMeta.width!, height: H - phoneTop }).png().toBuffer()
     : phoneRotated;
 
-  // Subheadline below headline — wrap + fit so long lines don't clip the canvas.
-  const subWrapped = wrap(screenshot.subheadline ?? '', 38);
+  // Subheadline below headline — wrap + fit so long lines don't clip the
+  // canvas. wrapSmart never silently drops content (allows up to 3 lines).
+  const subWrapped = wrapSmart(screenshot.subheadline ?? '', 38, 3) ?? [];
   const subSz = fitText(longest(subWrapped), safe, Math.floor(W * 0.048), 0.55);
   const subLineH = Math.floor(subSz * 1.30);
   const subY0 = lineY + Math.floor(H * 0.020);
@@ -102,19 +103,10 @@ export async function highlightPill(input: LayoutInput): Promise<Buffer> {
 function longest(lines: string[]): string {
   return lines.reduce((a, b) => a.length > b.length ? a : b, '');
 }
-function wrap(text: string, target: number): string[] {
-  const words = text.split(/\s+/).filter(Boolean);
-  const lines: string[] = [];
-  let cur = '';
-  for (const w of words) {
-    const next = cur ? `${cur} ${w}` : w;
-    if (next.length > target && cur) { lines.push(cur); cur = w; } else { cur = next; }
-  }
-  if (cur) lines.push(cur);
-  return lines.slice(0, 2);
-}
 
 // Group headline tokens into rough lines based on a target chars/line.
+// Never silently truncates — over-long token streams produce more lines and
+// the caller's font fit shrinks to fit.
 function layoutTokens(tokens: { text: string; highlight: boolean }[], targetChars: number) {
   const lines: { text: string; highlight: boolean }[][] = [];
   let current: { text: string; highlight: boolean }[] = [];
@@ -131,5 +123,5 @@ function layoutTokens(tokens: { text: string; highlight: boolean }[], targetChar
     }
   }
   if (current.length) lines.push(current);
-  return lines.slice(0, 3);
+  return lines;
 }

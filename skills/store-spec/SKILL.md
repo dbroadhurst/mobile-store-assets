@@ -297,9 +297,9 @@ For each set, write:
 
 When N > 8, continue rotating hue by +45° from preset 0.
 
-The `app-motif` bg style renders a brand-tinted gradient with a *dense* scatter of vector glyphs. Every other style (gradient / mesh / bokeh / minimal / geometric) also picks up a *sparse* glyph overlay, so no set in the matrix ever feels generic when the spec carries motif signal.
+The `app-motif` bg style renders a brand-tinted gradient with a *dense* scatter of vector glyphs. The `gradient`, `mesh`, `bokeh`, and `geometric` styles pick up a *sparse* version of the same overlay; `minimal` renders without it.
 
-Glyph categories: `finance`, `money`, `fitness`, `meditation`, `civics`, `learning`, `photo`, `travel`, `game`, `music`, `food`, `news`, `productivity`, `social`, plus an abstract fallback. The glyph palette is picked from the same motif tokens used by the AI background prompts — so `app.category`, `aso.positioning`, `aso.primary_keywords`, and `spec.hint` all influence which icons appear. For AI backgrounds, the user's `spec.hint` is also injected verbatim into the prompt as an "app context" clause, so the model can use the actual app description (not just our category inference).
+The glyph library is intentionally generic — abstract shapes (circles, triangles, plus, diamond, half-moon) — so the plugin never asserts what your app is about. If you want category-specific subject motifs in the rendered background, switch to AI background generation: the AI prompt is built from the user-authored `app.category`, `aso.positioning`, `aso.primary_keywords`, `aso.secondary_keywords`, and `spec.hint` (verbatim, capped at 200 chars), and the model picks suitable subject motifs from that context. There is no plugin-side keyword inference or category enumeration.
 
 #### Headline framing modes (rotate through across sets)
 

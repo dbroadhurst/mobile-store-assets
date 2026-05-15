@@ -6,7 +6,10 @@
 //   text-hero               — no phone; bold headline + trust badge + decorative motif
 //   caption-below           — phone fills upper canvas; brand mark + caption beneath
 //   uppercase-top           — ALL-CAPS title at top; phone full-bleed bottom (may bleed off)
-//   logo-tilted             — logo top-left + headline; phone tilted at bottom
+//   logo-tilted             — headline at top; phone tilted at bottom
+//   aurora-hero             — radial-mesh aurora bg, oversized ALL-CAPS headline, centred phone
+//   bento                   — 2-col bento grid: phone tile left + 3 feature tiles right
+//   editorial-split         — magazine-cover: oversized stat/word + headline + phone right
 //   highlight-pill          — mixed-weight headline with bright pill behind a [bracketed] keyword
 //   side-list               — vertical pill list on the left; phone right
 //   card-tilted             — white rounded card (caption + badge) overlapping a tilted phone
@@ -23,6 +26,9 @@ export type Layout =
   | 'caption-below'
   | 'uppercase-top'
   | 'logo-tilted'
+  | 'aurora-hero'
+  | 'bento'
+  | 'editorial-split'
   | 'highlight-pill'
   | 'side-list'
   | 'card-tilted'
@@ -41,6 +47,9 @@ export const PHONE_REQUIRED_LAYOUTS: ReadonlySet<Layout> = new Set([
   'caption-below',
   'uppercase-top',
   'logo-tilted',
+  'aurora-hero',
+  'bento',
+  'editorial-split',
   'highlight-pill',
   'side-list',
   'card-tilted',

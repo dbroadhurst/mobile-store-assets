@@ -16,9 +16,9 @@ import type { Layout, StorySlot, ScreenshotSpec, Orientation } from './types.js'
 // screenshot's orientation field (or auto-detected aspect).
 
 export const VALID_LAYOUTS_PORTRAIT: Record<StorySlot, Layout[]> = {
-  value: ['uppercase-top', 'logo-tilted', 'highlight-pill', 'caption-below'],
-  usage: ['caption-below', 'card-tilted', 'dual-phone-overlap', 'side-list'],
-  trust: ['side-list', 'dual-phone-overlap', 'caption-below', 'highlight-pill'],
+  value: ['uppercase-top', 'aurora-hero', 'highlight-pill', 'caption-below'],
+  usage: ['caption-below', 'card-tilted', 'dual-phone-overlap', 'bento'],
+  trust: ['editorial-split', 'dual-phone-overlap', 'side-list', 'highlight-pill'],
   cta:   ['text-hero'],
 };
 

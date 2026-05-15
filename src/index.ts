@@ -30,6 +30,9 @@ import { textHero } from './layouts/text-hero.js';
 import { captionBelow } from './layouts/caption-below.js';
 import { uppercaseTop } from './layouts/uppercase-top.js';
 import { logoTilted } from './layouts/logo-tilted.js';
+import { auroraHero } from './layouts/aurora-hero.js';
+import { bento } from './layouts/bento.js';
+import { editorialSplit } from './layouts/editorial-split.js';
 import { highlightPill } from './layouts/highlight-pill.js';
 import { sideList } from './layouts/side-list.js';
 import { cardTilted } from './layouts/card-tilted.js';
@@ -218,6 +221,9 @@ async function renderLayout(input: LayoutInput, platform: Platform): Promise<Buf
     case 'caption-below':       return captionBelow(input);
     case 'uppercase-top':       return uppercaseTop(input);
     case 'logo-tilted':         return logoTilted(input);
+    case 'aurora-hero':         return auroraHero(input);
+    case 'bento':               return bento(input);
+    case 'editorial-split':     return editorialSplit(input);
     case 'highlight-pill':      return highlightPill(input);
     case 'side-list':           return sideList(input);
     case 'card-tilted':         return cardTilted(input);
@@ -305,13 +311,14 @@ const TEXT_SAFE_DIRECTIVE =
   'and stylised, not literal illustrations.';
 
 function graphicStylePrompt(theme: Theme, app: AppContext): string {
-  // Builds a structured prompt for AI background generation. Each clause has a
-  // distinct purpose so the model can attend to them independently:
+  // Builds a structured prompt for AI background generation. The plugin does
+  // NOT enumerate app types or inject subject motifs of its own — all subject
+  // context comes from user-authored fields (hint, positioning, keywords,
+  // category). The model picks suitable motifs from that input.
+  //
   //   1. Style + palette  — the visual language (gradient / mesh / bokeh / …)
-  //   2. Subject motifs   — concrete app-specific imagery (flag stars for a
-  //                          civics app, houses for mortgage, etc)
-  //   3. User context     — the raw spec.hint, verbatim, capped to 200 chars
-  //                          (the user is the strongest source of truth)
+  //   2. User subject     — hint + positioning + keywords + category, verbatim
+  //   3. Treatment        — generic "abstract, stylised, watermark" framing
   //   4. Text-safe        — keep top/bottom open, centre interest
   // Palette is referenced by NAME — never hex (Imagen renders hex as text).
   const palette = theme.palette_name;
@@ -332,94 +339,48 @@ function graphicStylePrompt(theme: Theme, app: AppContext): string {
     }
   })();
 
-  const subjectMotif = app.motifPhrase
-    ? `Subject motifs: faint, semi-transparent ${app.motifPhrase} — abstract and stylised as soft background imagery, not literal illustrations.`
-    : '';
-
-  // App context lifts the user-authored steering text directly into the prompt.
-  // The hint outranks our regex inference because it's authoritative.
+  // User-authored subject context. We pass these fields VERBATIM and let the
+  // model pick subject motifs from them. No regex inference, no category-
+  // specific imagery — the plugin has no opinion about what your app does.
   const ctxBits: string[] = [];
-  if (app.category) ctxBits.push(`category: ${app.category}`);
-  if (app.hint)     ctxBits.push(`app context: ${truncate(app.hint, 200)}`);
+  if (app.category)    ctxBits.push(`category: ${app.category}`);
+  if (app.positioning) ctxBits.push(`positioning: ${truncate(app.positioning, 200)}`);
+  if (app.keywords.length) ctxBits.push(`keywords: ${app.keywords.slice(0, 8).join(', ')}`);
+  if (app.hint)        ctxBits.push(`app context: ${truncate(app.hint, 200)}`);
   const userContext = ctxBits.length ? ctxBits.join('. ') + '.' : '';
 
-  return [styleSeed, subjectMotif, userContext, TEXT_SAFE_DIRECTIVE].filter(Boolean).join(' ');
+  const treatment = userContext
+    ? 'Pick subject motifs that fit the app context above. Render them as faint, semi-transparent abstract silhouettes — stylised and watermark-like, not literal illustrations.'
+    : '';
+
+  return [styleSeed, userContext, treatment, TEXT_SAFE_DIRECTIVE].filter(Boolean).join(' ');
 }
 
 function truncate(s: string, n: number): string {
   return s.length <= n ? s : s.slice(0, n - 1).trimEnd() + '…';
 }
 
-// Light-touch context derived from the spec + config. Produces both a natural-
-// language phrase (for AI prompts) and a set of motif tokens (for the CSS
-// `app-motif` background renderer, which keys faint vector glyphs by token).
+// User-authored steering bundle — what the user wrote about their app. The
+// plugin passes these through verbatim to AI prompts and stores them for
+// downstream renderers. The plugin does NOT enumerate app types, infer motif
+// categories from keywords, or inject any subject imagery of its own.
 interface AppContext {
-  motifPhrase: string;
-  motifTokens: string[];
   hint: string;
   category: string;
+  positioning: string;
+  keywords: string[];
 }
 
 function buildAppContext(spec: Spec, config: StoreConfig): AppContext {
-  const category = (config.app.category ?? '').trim().toLowerCase();
-  const keywords = [
-    ...(spec.aso?.primary_keywords ?? []),
-    ...(spec.aso?.secondary_keywords ?? []),
-  ].map(k => k.toLowerCase());
-  const positioning = (spec.aso?.positioning ?? '').toLowerCase();
-  const hintRaw = (spec.hint ?? '').trim();
-  const hint = hintRaw.toLowerCase();
-
-  // Curated motif map — pairs a topic *token* (used by the CSS app-motif glyph
-  // library) with a longer phrase (used by AI prompts). Same regex haystack
-  // drives both so they stay in sync. Categories not matched fall through to
-  // 'abstract' shapes.
-  //
-  // Word-boundary anchors (\b) prevent false matches like /quest/ inside
-  // "questions" (which previously dragged game motifs into education apps).
-  const haystack = `${category} ${keywords.join(' ')} ${positioning} ${hint}`;
-  const tokens: string[] = [];
-  const phrases: string[] = [];
-  const add = (token: string, phrase: string) => {
-    if (!tokens.includes(token)) { tokens.push(token); phrases.push(phrase); }
+  return {
+    category:    (config.app.category ?? '').trim(),
+    positioning: (spec.aso?.positioning ?? '').trim(),
+    keywords: [
+      ...(spec.aso?.primary_keywords ?? []),
+      ...(spec.aso?.secondary_keywords ?? []),
+    ].map(k => k.trim()).filter(Boolean),
+    hint:        (spec.hint ?? '').trim(),
   };
-
-  if (/\b(mortgage|loan|finance|property|real estate|repayment|interest)\b/.test(haystack))
-    add('finance', 'houses, keys, gentle architectural silhouettes, financial planning');
-  if (/\b(budget|spend|money|expense|saving|invest)\w*/.test(haystack))
-    add('money', 'coins, charts, growth curves, abstract money flow');
-  // 'run' and 'step' deliberately excluded — they false-match common phrases
-  // like "step-by-step" and "run a test" outside any fitness context.
-  if (/\b(health|fitness|workout|exercise|cardio|yoga|pilates|gym|jog|treadmill|marathon)\w*/.test(haystack))
-    add('fitness', 'movement, soft pulses, energy lines');
-  if (/\b(meditat|mindful|sleep|calm|breath)\w*/.test(haystack))
-    add('meditation', 'soft waves, gentle ripples, calm horizon lines');
-  if (/\b(civics|citizen|naturali[sz]ation|uscis|n-?400|voting|election|government|democracy|constitution)\w*/.test(haystack))
-    add('civics', 'American flag stars and stripes, ballot, scrolls, neoclassical column silhouettes, civic architecture');
-  if (/\b(learn|education|study|language|quiz|test|exam|practice|tutor|course|lesson|flashcard)\w*/.test(haystack))
-    add('learning', 'open books, paths, growth arcs, gentle academic motifs');
-  if (/\b(photo|camera|gallery|portrait|selfie)\w*/.test(haystack))
-    add('photo', 'frames, light leaks, soft prisms');
-  if (/\b(travel|trip|map|navigation|flight|hotel|tour)\w*/.test(haystack))
-    add('travel', 'soft maps, paths, distant horizons');
-  if (/\b(game|puzzle|adventure|arcade|rpg)\b/.test(haystack))
-    add('game', 'controllers, dice, abstract play tokens');
-  if (/\b(music|sound|audio|listen|playlist|song|podcast)\w*/.test(haystack))
-    add('music', 'notes, waveforms, soft rhythm lines');
-  if (/\b(food|recipe|cook|meal|nutrition|kitchen|chef|baking)\w*/.test(haystack))
-    add('food', 'plates, utensils, fresh produce silhouettes');
-  if (/\b(news|journalism|headline|magazine|article|reader|press)\w*/.test(haystack))
-    add('news', 'newspaper folds, soft column rules, headline strips');
-  if (/\b(task|to-?do|project|plan|productivity|kanban|reminder|note)\w*/.test(haystack))
-    add('productivity', 'checklist marks, gentle grid lines, project board outlines');
-  if (/\b(chat|messag|social|community|forum|discus|group)\w*/.test(haystack))
-    add('social', 'speech bubbles, gentle connection lines, social graph nodes');
-
-  const motifPhrase = phrases.length > 0
-    ? phrases.join(' and ')
-    : 'modern minimal abstraction';
-
-  return { motifPhrase, motifTokens: tokens, hint: hintRaw, category };
 }
 
 interface BgArgs {
@@ -449,7 +410,7 @@ async function acquireBackground(b: BgArgs): Promise<Buffer> {
   // CSS/SVG path: deterministic from theme — render once at the canonical size.
   // App-motif tokens flow in so the `app-motif` bg style picks the right glyphs.
   if (!b.args.useAiBg) {
-    const buf = await renderBackground(b.theme, dims.w, dims.h, b.appContext.motifTokens);
+    const buf = await renderBackground(b.theme, dims.w, dims.h);
     b.bucket.set(memKey, buf);
     return buf;
   }
