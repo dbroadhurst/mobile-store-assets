@@ -2,12 +2,13 @@ import sharp from 'sharp';
 import fs from 'fs';
 import path from 'path';
 import { escapeXml, fitText, resizeBg, stripBrackets, circularCrop, TEXT_SHADOW_DEFS } from '../helpers.js';
-import type { LayoutInput } from '../types.js';
+import { estimateTextBbox, unionBbox } from '../contrast-gate.js';
+import type { LayoutInput, LayoutResult, TextZone } from '../types.js';
 
 // LANDSCAPE-TEXT-ONLY  (CTA closer at landscape)
 // No phone. Wide canvas. App icon + headline + subhead, all centred. The
 // text-hero equivalent for landscape sets.
-export async function landscapeTextOnly(input: LayoutInput): Promise<Buffer> {
+export async function landscapeTextOnly(input: LayoutInput): Promise<LayoutResult> {
   const { background, screenshot, theme, config, targetWidth: W, targetHeight: H, projectRoot } = input;
   const bg = await resizeBg(background, W, H);
 
@@ -68,7 +69,40 @@ export async function landscapeTextOnly(input: LayoutInput): Promise<Buffer> {
   if (iconComposite) composites.push(iconComposite);
   composites.push({ input: Buffer.from(overlay), top: 0, left: 0 });
 
-  return sharp(bg).composite(composites).png().toBuffer();
+  const buffer = await sharp(bg).composite(composites).png().toBuffer();
+
+  const headlineBboxes = headlineLines.map((line, i) =>
+    estimateTextBbox({
+      x: textLeft, y: headlineY0 + (i + 1) * lineH, text: line,
+      fontSize: headlineSz, anchor: 'start', charRatio: 0.66,
+    }),
+  );
+  const subBboxes = subWrapped.map((line, i) =>
+    estimateTextBbox({
+      x: textLeft, y: subY0 + i * subLineH + subSz * 0.85, text: line,
+      fontSize: subSz, anchor: 'start', charRatio: 0.55,
+    }),
+  );
+  const zones: TextZone[] = [
+    {
+      role: 'headline',
+      text: headlineLines.join(' '),
+      bbox: unionBbox(headlineBboxes),
+      color: theme.headline_color,
+      fontSize: headlineSz,
+      isLargeText: true,
+    },
+    ...(subWrapped.length > 0 ? [{
+      role: 'subheadline' as const,
+      text: subWrapped.join(' '),
+      bbox: unionBbox(subBboxes),
+      color: theme.subheadline_color,
+      fontSize: subSz,
+      isLargeText: subSz >= Math.floor(H * 0.025),
+    }] : []),
+  ];
+
+  return { buffer, zones };
 }
 
 function longest(lines: string[]): string {

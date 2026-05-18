@@ -10,18 +10,36 @@ import type {
 import { deriveThemes } from './themes.js';
 import { inferSlot, layoutForSet } from './story-arc.js';
 
-// Old layout names we used to support — silently migrated so existing specs
-// keep working after the layout overhaul.
+// Older layout names we used to support — silently migrated so existing specs
+// keep working. Two generations of legacy:
+//   1. Very old shorthand (cta, hero-center, split-right, etc.)
+//   2. The earlier layout family (text-hero, caption-below, etc.) replaced by
+//      the container-first system in src/layouts/. See LEGACY_LAYOUT_ALIASES
+//      in src/index.ts for the runtime alias map (this file overlaps with
+//      that on purpose — both code paths read user-authored spec.yaml).
 const LEGACY_LAYOUT_MAP: Record<string, Layout> = {
-  'cta':             'text-hero',
-  'hero-center':     'caption-below',
-  'split-right':     'caption-below',
-  'split-left':      'caption-below',
-  'feature-callout': 'card-tilted',
+  // Very old shorthand
+  'cta':                'hero-type',
+  'hero-center':        'caption-band',
+  'split-right':        'caption-band',
+  'split-left':         'caption-band',
+  'feature-callout':    'tilted-card',
+  // Older layout family — superseded names
+  'text-hero':          'hero-type',
+  'caption-below':      'caption-band',
+  'uppercase-top':      'headline-masthead',
+  'logo-tilted':        'hero-type',
+  'aurora-hero':        'hero-type',
+  'bento':              'vertical-bento',
+  'editorial-split':    'editorial-card',
+  'highlight-pill':     'hero-type',
+  'side-list':          'feature-stack',
+  'card-tilted':        'tilted-card',
+  'dual-phone-overlap': 'dual-phone',
 };
 
 function migrateLayout(layout: string | undefined): Layout {
-  if (!layout) return 'caption-below';
+  if (!layout) return 'caption-band';
   if (LEGACY_LAYOUT_MAP[layout]) return LEGACY_LAYOUT_MAP[layout];
   return layout as Layout;
 }

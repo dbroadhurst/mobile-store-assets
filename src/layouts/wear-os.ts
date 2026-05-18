@@ -2,7 +2,8 @@ import sharp from 'sharp';
 import fs from 'fs';
 import path from 'path';
 import { escapeXml, fitText, resizeBg, stripBrackets, circularCrop, TEXT_SHADOW_DEFS } from '../helpers.js';
-import type { LayoutInput } from '../types.js';
+import { estimateTextBbox } from '../contrast-gate.js';
+import type { LayoutInput, LayoutResult, TextZone } from '../types.js';
 
 // WEAR OS  (384×384, 1:1)
 // Phone-screenshot layouts don't make sense at watch size. This composition
@@ -10,7 +11,7 @@ import type { LayoutInput } from '../types.js';
 // + a single-word headline if it fits. Anything more is illegible at 384px.
 //
 // The dispatcher routes wear-os → here regardless of the spec's `layout` value.
-export async function wearOs(input: LayoutInput): Promise<Buffer> {
+export async function wearOs(input: LayoutInput): Promise<LayoutResult> {
   const { background, screenshot, theme, config, targetWidth: W, targetHeight: H, projectRoot } = input;
   const bg = await resizeBg(background, W, H);
 
@@ -43,5 +44,22 @@ export async function wearOs(input: LayoutInput): Promise<Buffer> {
   if (iconComposite) composites.push(iconComposite);
   composites.push({ input: Buffer.from(overlay), top: 0, left: 0 });
 
-  return sharp(bg).composite(composites).png().toBuffer();
+  const buffer = await sharp(bg).composite(composites).png().toBuffer();
+
+  // Wear-OS canvas (384×384) is too small for the standard font-size floor
+  // designed for 1290px-wide canvases — the gate's proportional minimum
+  // (74px headline × 384/1290 = ~22px) is the right scale.
+  const zones: TextZone[] = word ? [{
+    role: 'headline',
+    text: word,
+    bbox: estimateTextBbox({
+      x: cx, y: wordY, text: word, fontSize: wordSz,
+      anchor: 'middle', charRatio: 0.62,
+    }),
+    color: theme.headline_color,
+    fontSize: wordSz,
+    isLargeText: true,
+  }] : [];
+
+  return { buffer, zones };
 }

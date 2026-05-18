@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import type { GateResult } from './types.js';
 
 // ─── Manifest item ────────────────────────────────────────────────────────────
 // One entry per rendered image (screenshot OR feature graphic). The review page
@@ -18,6 +19,11 @@ export interface ManifestItem {
   width: number;        // rendered canvas width (drives review.html aspect-ratio)
   height: number;       // rendered canvas height
   orientation: 'portrait' | 'landscape';
+  // Readability-gate findings for this render. Empty arrays = passes both
+  // contrast (WCAG 2.2 AA) and font-size floor checks. Layouts that don't
+  // declare any text zones (TV banner, watch face, or legacy layouts that
+  // haven't been migrated yet) pass trivially.
+  gates?: GateResult;
 }
 
 interface ReviewWriterOptions {

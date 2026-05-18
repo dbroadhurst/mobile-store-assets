@@ -1,0 +1,832 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>mobile-store-assets · layouts v2 (readability-first)</title>
+<style>
+  :root {
+    --ink: #1A2330;
+    --ink-2: #4B5566;
+    --line: #E2E6EE;
+    --bg: #F6F7FB;
+    --accent: #5C6BFF;
+    --good: #1FA67A;
+    --warn: #B8861A;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 15px/1.55 -apple-system, "SF Pro Text", "Inter", system-ui, sans-serif;
+  }
+  header {
+    padding: 40px 48px 24px;
+    border-bottom: 1px solid var(--line);
+    background: #fff;
+  }
+  header h1 { margin: 0 0 6px; font-size: 22px; letter-spacing: -0.01em; }
+  header .meta { color: var(--ink-2); font-size: 13px; }
+
+  .legend {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 16px;
+    padding: 24px 48px;
+    background: #fff;
+    border-bottom: 1px solid var(--line);
+  }
+  .legend h3 { margin: 0 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-2); }
+  .legend p { margin: 0; font-size: 13px; color: var(--ink); }
+  .legend code {
+    background: #EEF1F8; padding: 1px 5px; border-radius: 3px;
+    font-size: 12px; color: var(--ink);
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+    gap: 28px;
+    padding: 32px 48px 64px;
+  }
+  .card {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .card-art {
+    background: #F2F3F8;
+    padding: 22px;
+    display: flex;
+    justify-content: center;
+  }
+  .card-body { padding: 18px 20px 22px; }
+  .card-num {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--accent);
+    font-weight: 700;
+  }
+  .card-name {
+    margin: 2px 0 6px;
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+  .slot-tag {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 2px 8px;
+    border-radius: 999px;
+    margin-bottom: 10px;
+  }
+  .slot-tag.value   { background: #DCE0F5; color: #2A327A; }
+  .slot-tag.flow    { background: #DEF3EA; color: #19674A; }
+  .slot-tag.trust   { background: #F9E7CB; color: #7A5414; }
+  .slot-tag.feature { background: #EEF1F8; color: var(--ink-2); }
+  .slot-tag.cta     { background: #FFD3CD; color: #8A2A1A; }
+
+  /* Story-arc strip */
+  .arc {
+    padding: 24px 48px;
+    background: #fff;
+    border-bottom: 1px solid var(--line);
+  }
+  .arc h2 {
+    margin: 0 0 6px;
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--ink-2);
+  }
+  .arc p { margin: 0 0 14px; color: var(--ink-2); font-size: 13px; max-width: 820px; }
+  .arc-row {
+    display: grid;
+    grid-template-columns: repeat(10, 1fr);
+    gap: 8px;
+  }
+  .arc-slot {
+    background: #F6F7FB;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 8px 8px 10px;
+    text-align: center;
+  }
+  .arc-slot .slot-n {
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--ink-2);
+    letter-spacing: 0.08em;
+  }
+  .arc-slot .slot-job {
+    font-size: 11px;
+    font-weight: 700;
+    margin: 2px 0 4px;
+  }
+  .arc-slot .slot-layout {
+    font-size: 10px;
+    color: var(--ink-2);
+    line-height: 1.25;
+  }
+  .arc-slot.j-value   { background: #DCE0F5; border-color: #B5BEEC; }
+  .arc-slot.j-value   .slot-job { color: #2A327A; }
+  .arc-slot.j-flow    { background: #DEF3EA; border-color: #B6E0CB; }
+  .arc-slot.j-flow    .slot-job { color: #19674A; }
+  .arc-slot.j-trust   { background: #F9E7CB; border-color: #ECD2A1; }
+  .arc-slot.j-trust   .slot-job { color: #7A5414; }
+  .arc-slot.j-feature .slot-job { color: var(--ink); }
+  .arc-slot.j-cta     { background: #FFD3CD; border-color: #F4B6AD; }
+  .arc-slot.j-cta     .slot-job { color: #8A2A1A; }
+
+  /* Thumbnail row — the 25% zoom test made visible */
+  .thumbs {
+    padding: 24px 48px 28px;
+    background: #fff;
+    border-bottom: 1px solid var(--line);
+  }
+  .thumbs h2 {
+    margin: 0 0 6px;
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--ink-2);
+  }
+  .thumbs p { margin: 0 0 14px; color: var(--ink-2); font-size: 13px; max-width: 820px; }
+  .thumb-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 18px;
+    align-items: flex-end;
+  }
+  .thumb-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+  .thumb-cell svg { display: block; border-radius: 6px; box-shadow: 0 2px 6px rgba(20,30,60,0.18); }
+  .thumb-cell .thumb-label { font-size: 10px; color: var(--ink-2); font-weight: 600; }
+  .card-desc { margin: 0 0 12px; color: var(--ink-2); font-size: 13px; }
+  .card-spec {
+    margin: 0;
+    padding: 10px 12px;
+    background: #F6F7FB;
+    border-radius: 8px;
+    font-size: 12px;
+    color: var(--ink);
+    list-style: none;
+  }
+  .card-spec li { padding: 2px 0; }
+  .card-spec b { color: var(--ink); }
+  .pill {
+    display: inline-block;
+    font-size: 11px;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: #EEF1F8;
+    color: var(--ink-2);
+    margin-right: 4px;
+  }
+  .pill.solid { background: #DCE0F5; color: #2A327A; }
+  .pill.band  { background: #DEF3EA; color: #19674A; }
+  .pill.chip  { background: #F9E7CB; color: #7A5414; }
+
+  /* shared SVG style — phones are placeholders */
+  svg.layout { display: block; width: 320px; height: 640px; border-radius: 18px; overflow: hidden; box-shadow: 0 4px 20px rgba(20,30,60,0.10); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>mobile-store-assets — phone layouts · portrait screenshots</h1>
+  <div class="meta">
+    Portrait phone frame · portrait screenshot canvas (1290 × 2796) · for portrait-only apps. 8 layouts ·
+    every text zone sits on a computed-alpha container · palette shown is a placeholder (deep indigo → teal);
+    the production palette is derived per theme.
+  </div>
+  <nav style="margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap; font-size: 12px;">
+    <a href="layouts-phone-portrait-shots.html"   style="padding: 4px 10px; border-radius: 999px; background: #DCE0F5; color: #2A327A; font-weight: 700; text-decoration: none;">Phone · portrait shots</a>
+    <a href="layouts-phone-landscape-shots.html"  style="padding: 4px 10px; border-radius: 999px; background: #EEF1F8; color: #4B5566; font-weight: 600; text-decoration: none;">Phone · landscape shots</a>
+    <a href="layouts-tablet-portrait-shots.html"  style="padding: 4px 10px; border-radius: 999px; background: #EEF1F8; color: #4B5566; font-weight: 600; text-decoration: none;">Tablet · portrait shots</a>
+    <a href="layouts-tablet-landscape-shots.html" style="padding: 4px 10px; border-radius: 999px; background: #EEF1F8; color: #4B5566; font-weight: 600; text-decoration: none;">Tablet · landscape shots</a>
+  </nav>
+</header>
+
+<section class="legend">
+  <div>
+    <h3>Container styles</h3>
+    <p>
+      <span class="pill solid">solid-panel</span> rounded rect, ~0.78 alpha, drop shadow — hero, key headlines.<br>
+      <span class="pill band">soft-band</span> full-width band with feathered edge, ~0.55 alpha — captions, banners.<br>
+      <span class="pill chip">chip</span> small filled pill — badges, feature claims, callouts.
+    </p>
+  </div>
+  <div>
+    <h3>Scrim math</h3>
+    <p>
+      Container alpha is solved so that <code>contrast(text, blended-bg) ≥ target</code>.<br>
+      Headlines aim for <b>4.5:1</b> (AAA-equivalent for large text). Body & captions aim for <b>4.5:1</b> (WCAG AA).
+    </p>
+  </div>
+  <div>
+    <h3>Merge rule</h3>
+    <p>
+      Two zones whose padded bboxes overlap (or sit within <code>0.6 × line-height</code> of each other)
+      are merged into a single container — no clashing rectangles when headline + subhead are close.
+    </p>
+  </div>
+  <div>
+    <h3>Auto-remediation</h3>
+    <p>
+      Render → gate samples actual pixels under each zone → any failure escalates that container's target ratio
+      and re-paints. Up to 2 retries before the CLI exits non-zero.
+    </p>
+  </div>
+  <div>
+    <h3>Copy budget <span style="font-weight: 400; color: var(--ink-2);">(Apptweak + Adapty, 2025)</span></h3>
+    <p>
+      Headlines aim for <b>≤ 7 words</b> (Adapty: "under one sentence per image"). Benefit-led framing
+      (<i>"Plan your week in minutes"</i>) outperforms generic labels (<i>"Calendar app"</i>) — Apptweak.
+      <b>Decision happens in 17–50 ms</b>: the first 3 screenshots carry conversion.
+    </p>
+  </div>
+  <div>
+    <h3>Safe-area rule</h3>
+    <p>
+      Every text run is fit-tested against its container's width (container.width − 2 × padding).
+      Lines that don't fit are auto-shrunk or wrapped at render time. Mockups below use the worst-case
+      padding so they read as the production output will.
+    </p>
+  </div>
+</section>
+
+<section class="arc">
+  <h2>Story arc — sequencing across 10 slots</h2>
+  <p>
+    Per StoreMaven / SplitMetrics, <b>~90% of decisions are made on slots 1–3</b> (iOS search shows the first
+    three portrait shots inline). Treat them as a sentence: <b>Value → Flow → Trust</b>. Slots 4–8 carry
+    feature depth; slot 10 closes with a CTA. This sequence is what <code>story-arc.ts</code> will assign
+    by default, and what <code>design/layouts-phone-portrait-shots.html</code> documents:
+  </p>
+  <div class="arc-row">
+    <div class="arc-slot j-value">    <div class="slot-n">SLOT 1</div> <div class="slot-job">VALUE</div> <div class="slot-layout">Hero Type</div></div>
+    <div class="arc-slot j-flow">     <div class="slot-n">SLOT 2</div> <div class="slot-job">FLOW</div>  <div class="slot-layout">Caption Band</div></div>
+    <div class="arc-slot j-trust">    <div class="slot-n">SLOT 3</div> <div class="slot-job">TRUST</div> <div class="slot-layout">Feature Stack</div></div>
+    <div class="arc-slot j-feature">  <div class="slot-n">SLOT 4</div> <div class="slot-job">FEATURE</div><div class="slot-layout">Editorial Card</div></div>
+    <div class="arc-slot j-feature">  <div class="slot-n">SLOT 5</div> <div class="slot-job">FEATURE</div><div class="slot-layout">Vertical Bento</div></div>
+    <div class="arc-slot j-feature">  <div class="slot-n">SLOT 6</div> <div class="slot-job">FEATURE</div><div class="slot-layout">Dual Phone</div></div>
+    <div class="arc-slot j-feature">  <div class="slot-n">SLOT 7</div> <div class="slot-job">FEATURE</div><div class="slot-layout">Tilted Card</div></div>
+    <div class="arc-slot j-feature">  <div class="slot-n">SLOT 8</div> <div class="slot-job">FEATURE</div><div class="slot-layout">Caption Band</div></div>
+    <div class="arc-slot j-trust">    <div class="slot-n">SLOT 9</div> <div class="slot-job">TRUST</div>  <div class="slot-layout">Headline Masthead</div></div>
+    <div class="arc-slot j-cta">      <div class="slot-n">SLOT 10</div><div class="slot-job">CTA</div>   <div class="slot-layout">Hero Type</div></div>
+  </div>
+</section>
+
+<section class="thumbs">
+  <h2>The 25% zoom test — what users see in search</h2>
+  <p>
+    iOS search results show portrait screenshots at roughly 75 px wide — about a quarter of authored size.
+    If a layout's headline isn't readable here, it isn't doing any conversion work. The thumbnails below
+    are the same SVGs as the full mockups, scaled to thumbnail size.
+  </p>
+  <div class="thumb-row" id="thumb-row"><!-- populated by script at the bottom of the page --></div>
+</section>
+
+<section class="grid">
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 01 — HERO TYPE                                                           -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<article class="card">
+  <div class="card-art">
+    <svg class="layout" viewBox="0 0 320 640" xmlns="http://www.w3.org/2000/svg">
+      <!-- bg gradient with motif suggestion -->
+      <defs>
+        <linearGradient id="bg1" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#1E2A4A"/>
+          <stop offset="1" stop-color="#2E5E7E"/>
+        </linearGradient>
+        <radialGradient id="motif1a" cx="0.15" cy="0.1" r="0.4">
+          <stop offset="0" stop-color="#5C6BFF" stop-opacity="0.35"/>
+          <stop offset="1" stop-color="#5C6BFF" stop-opacity="0"/>
+        </radialGradient>
+        <radialGradient id="motif1b" cx="0.9" cy="0.9" r="0.5">
+          <stop offset="0" stop-color="#F4B860" stop-opacity="0.25"/>
+          <stop offset="1" stop-color="#F4B860" stop-opacity="0"/>
+        </radialGradient>
+      </defs>
+      <rect width="320" height="640" fill="url(#bg1)"/>
+      <rect width="320" height="640" fill="url(#motif1a)"/>
+      <rect width="320" height="640" fill="url(#motif1b)"/>
+
+      <!-- icon disc -->
+      <circle cx="160" cy="120" r="42" fill="#FFFFFF" opacity="0.96"/>
+      <circle cx="160" cy="120" r="42" fill="none" stroke="#1E2A4A" stroke-opacity="0.12"/>
+      <text x="160" y="128" text-anchor="middle" font-family="Arial,Helvetica" font-size="32" font-weight="900" fill="#5C6BFF">A</text>
+
+      <!-- solid-panel for headline + subhead (merged) -->
+      <rect x="24" y="220" width="272" height="220" rx="18" fill="#0A0F1F" fill-opacity="0.74"/>
+
+      <!-- headline -->
+      <text x="160" y="278" text-anchor="middle" font-family="Arial,Helvetica" font-weight="900" font-size="36" fill="#FFFFFF" letter-spacing="-1">PLAN YOUR</text>
+      <text x="160" y="318" text-anchor="middle" font-family="Arial,Helvetica" font-weight="900" font-size="36" fill="#FFFFFF" letter-spacing="-1">WHOLE WEEK</text>
+      <text x="160" y="358" text-anchor="middle" font-family="Arial,Helvetica" font-weight="900" font-size="36" fill="#F4B860" letter-spacing="-1">IN MINUTES</text>
+
+      <!-- subhead -->
+      <text x="160" y="400" text-anchor="middle" font-family="Arial,Helvetica" font-size="15" fill="#FFFFFF" fill-opacity="0.88">Simple, fast, offline.</text>
+      <text x="160" y="420" text-anchor="middle" font-family="Arial,Helvetica" font-size="15" fill="#FFFFFF" fill-opacity="0.88">Free forever, no signup.</text>
+
+      <!-- chip row (centered: 78+6+92+6+74 = 256 → start x = (320-256)/2 = 32) -->
+      <g>
+        <rect x="32" y="478" width="78" height="34" rx="17" fill="#FFFFFF" fill-opacity="0.92"/>
+        <text x="71" y="500" text-anchor="middle" font-family="Arial,Helvetica" font-size="12" font-weight="700" fill="#1E2A4A">Free</text>
+
+        <rect x="116" y="478" width="92" height="34" rx="17" fill="#FFFFFF" fill-opacity="0.92"/>
+        <text x="162" y="500" text-anchor="middle" font-family="Arial,Helvetica" font-size="12" font-weight="700" fill="#1E2A4A">Offline</text>
+
+        <rect x="214" y="478" width="74" height="34" rx="17" fill="#F4B860" fill-opacity="0.95"/>
+        <text x="251" y="500" text-anchor="middle" font-family="Arial,Helvetica" font-size="12" font-weight="700" fill="#1A2330">Fast</text>
+      </g>
+    </svg>
+  </div>
+  <div class="card-body">
+    <div class="card-num">01</div>
+    <div class="card-name">Hero Type</div>
+    <span class="slot-tag value">Slot 1 · Value &nbsp;/&nbsp; Slot 10 · CTA</span>
+    <p class="card-desc">Brand icon → big stacked benefit headline → subhead → row of honest feature chips. No phone — the screenshot promises the outcome, not the UI. Owns slot 1 (the highest-leverage A/B test target) and reprises as slot 10 with a CTA variant.</p>
+    <ul class="card-spec">
+      <li><b>Containers:</b> <span class="pill solid">solid-panel</span> merged (headline + subhead) · <span class="pill chip">chip</span> × N feature pills</li>
+      <li><b>Roles:</b> headline (3 lines, accent on line 3), subheadline (≤ 2 lines), chip (≤ 4)</li>
+      <li><b>Use case:</b> closing screenshot · feature graphic value slot</li>
+    </ul>
+  </div>
+</article>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 02 — CAPTION BAND                                                         -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<article class="card">
+  <div class="card-art">
+    <svg class="layout" viewBox="0 0 320 640" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="bg2" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#244275"/>
+          <stop offset="1" stop-color="#1A2330"/>
+        </linearGradient>
+        <linearGradient id="band2" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#0A0F1F" stop-opacity="0"/>
+          <stop offset="0.35" stop-color="#0A0F1F" stop-opacity="0.58"/>
+          <stop offset="1" stop-color="#0A0F1F" stop-opacity="0.58"/>
+        </linearGradient>
+      </defs>
+      <rect width="320" height="640" fill="url(#bg2)"/>
+      <!-- soft top motif -->
+      <circle cx="40" cy="80" r="60" fill="#5C6BFF" opacity="0.22"/>
+      <circle cx="290" cy="40" r="50" fill="#F4B860" opacity="0.18"/>
+
+      <!-- phone placeholder -->
+      <g transform="translate(60 60)">
+        <rect width="200" height="380" rx="28" fill="#FFFFFF" stroke="#0A0F1F" stroke-opacity="0.15"/>
+        <rect x="10" y="14" width="180" height="352" rx="18" fill="#EEF1F8"/>
+        <rect x="22" y="32" width="156" height="22" rx="6" fill="#C9D0E0"/>
+        <rect x="22" y="64" width="100" height="14" rx="4" fill="#D9DEEA"/>
+        <rect x="22" y="88" width="156" height="64" rx="10" fill="#5C6BFF" opacity="0.5"/>
+        <rect x="22" y="162" width="156" height="64" rx="10" fill="#F4B860" opacity="0.55"/>
+        <rect x="22" y="236" width="156" height="64" rx="10" fill="#19674A" opacity="0.45"/>
+      </g>
+
+      <!-- soft-band for caption -->
+      <rect x="0" y="460" width="320" height="180" fill="url(#band2)"/>
+
+      <text x="160" y="510" text-anchor="middle" font-family="Arial,Helvetica" font-weight="800" font-size="26" fill="#FFFFFF" letter-spacing="-0.5">Three taps to track</text>
+      <text x="160" y="540" text-anchor="middle" font-family="Arial,Helvetica" font-weight="800" font-size="26" fill="#FFFFFF" letter-spacing="-0.5">every habit</text>
+      <text x="160" y="580" text-anchor="middle" font-family="Arial,Helvetica" font-size="15" fill="#FFFFFF" fill-opacity="0.88">Streaks, reminders, calendar view</text>
+    </svg>
+  </div>
+  <div class="card-body">
+    <div class="card-num">02</div>
+    <div class="card-name">Caption Band</div>
+    <span class="slot-tag flow">Slot 2 · Flow &nbsp;/&nbsp; Slot 8 · Feature</span>
+    <p class="card-desc">Phone hero in the top 70%, full-width soft-band caption at the bottom. The most "App Store native" composition — used by every Apple-made app. Verb-led caption ("Three taps to track…") shows how the value happens, not what it's called.</p>
+    <ul class="card-spec">
+      <li><b>Containers:</b> <span class="pill band">soft-band</span> bottom 28% (feathered top edge)</li>
+      <li><b>Roles:</b> headline (≤ 2 lines), subheadline (≤ 2 lines, optional)</li>
+      <li><b>Use case:</b> feature screenshots · the workhorse default</li>
+    </ul>
+  </div>
+</article>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 03 — HEADLINE MASTHEAD                                                   -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<article class="card">
+  <div class="card-art">
+    <svg class="layout" viewBox="0 0 320 640" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="bg3" x1="0" y1="0" x2="1" y2="0.6">
+          <stop offset="0" stop-color="#2E5E7E"/>
+          <stop offset="1" stop-color="#244275"/>
+        </linearGradient>
+      </defs>
+      <rect width="320" height="640" fill="url(#bg3)"/>
+      <!-- motif lines -->
+      <g stroke="#FFFFFF" stroke-opacity="0.08" fill="none">
+        <path d="M-20 60 Q 160 0 340 60"/>
+        <path d="M-20 90 Q 160 30 340 90"/>
+        <path d="M-20 120 Q 160 60 340 120"/>
+      </g>
+
+      <!-- masthead panel (top) -->
+      <rect x="20" y="36" width="280" height="166" rx="18" fill="#0A0F1F" fill-opacity="0.78"/>
+
+      <!-- eyebrow -->
+      <rect x="40" y="56" width="58" height="22" rx="11" fill="#F4B860"/>
+      <text x="69" y="71" text-anchor="middle" font-family="Arial,Helvetica" font-weight="800" font-size="11" fill="#1A2330" letter-spacing="0.5">NEW</text>
+
+      <text x="40" y="118" font-family="Arial,Helvetica" font-weight="900" font-size="30" fill="#FFFFFF" letter-spacing="-0.8">Track every</text>
+      <text x="40" y="150" font-family="Arial,Helvetica" font-weight="900" font-size="30" fill="#FFFFFF" letter-spacing="-0.8">workout in one</text>
+      <text x="40" y="182" font-family="Arial,Helvetica" font-weight="900" font-size="30" fill="#F4B860" letter-spacing="-0.8">simple app.</text>
+
+      <!-- phone bottom -->
+      <g transform="translate(60 240)">
+        <rect width="200" height="380" rx="28" fill="#FFFFFF" stroke="#0A0F1F" stroke-opacity="0.15"/>
+        <rect x="10" y="14" width="180" height="352" rx="18" fill="#EEF1F8"/>
+        <circle cx="100" cy="100" r="48" fill="#5C6BFF" opacity="0.6"/>
+        <rect x="22" y="170" width="156" height="20" rx="6" fill="#C9D0E0"/>
+        <rect x="22" y="200" width="120" height="14" rx="4" fill="#D9DEEA"/>
+        <rect x="22" y="240" width="156" height="48" rx="10" fill="#F4B860" opacity="0.55"/>
+        <rect x="22" y="296" width="156" height="48" rx="10" fill="#19674A" opacity="0.45"/>
+      </g>
+    </svg>
+  </div>
+  <div class="card-body">
+    <div class="card-num">03</div>
+    <div class="card-name">Headline Masthead</div>
+    <span class="slot-tag value">Slot 1 alt · Value &nbsp;/&nbsp; Slot 9 · Trust</span>
+    <p class="card-desc">Solid headline panel up top (Adapty: "text in the upper half" for the Value slot) with an eyebrow chip, full phone occupying the bottom. Reads strongest at thumbnail size — the headline lives in the part of the image that thumbnail-cropping always preserves.</p>
+    <ul class="card-spec">
+      <li><b>Containers:</b> <span class="pill solid">solid-panel</span> top + <span class="pill chip">chip</span> eyebrow</li>
+      <li><b>Roles:</b> badge/eyebrow (1), headline (≤ 3 lines, accent on last)</li>
+      <li><b>Use case:</b> intro / value slot · "What's new" framing</li>
+    </ul>
+  </div>
+</article>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 04 — EDITORIAL CARD                                                      -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<article class="card">
+  <div class="card-art">
+    <svg class="layout" viewBox="0 0 320 640" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="bg4" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#1A2330"/>
+          <stop offset="1" stop-color="#3A2E5E"/>
+        </linearGradient>
+      </defs>
+      <rect width="320" height="640" fill="url(#bg4)"/>
+      <circle cx="50" cy="80" r="80" fill="#5C6BFF" opacity="0.18"/>
+      <circle cx="290" cy="540" r="60" fill="#F4B860" opacity="0.20"/>
+
+      <!-- phone is the hero — full-width, slight tilt, clips top edge -->
+      <g transform="translate(40 50) rotate(-3 120 270)">
+        <rect width="240" height="540" rx="32" fill="#FFFFFF" stroke="#0A0F1F" stroke-opacity="0.18"/>
+        <rect x="12" y="16" width="216" height="508" rx="22" fill="#EEF1F8"/>
+        <rect x="28" y="36" width="172" height="22" rx="6" fill="#C9D0E0"/>
+        <rect x="28" y="68" width="120" height="14" rx="4" fill="#D9DEEA"/>
+        <rect x="28" y="98" width="184" height="72" rx="12" fill="#5C6BFF" opacity="0.55"/>
+        <rect x="28" y="182" width="184" height="72" rx="12" fill="#F4B860" opacity="0.55"/>
+        <rect x="28" y="266" width="184" height="72" rx="12" fill="#19674A" opacity="0.50"/>
+        <rect x="28" y="350" width="184" height="72" rx="12" fill="#5C6BFF" opacity="0.45"/>
+        <rect x="28" y="434" width="184" height="72" rx="12" fill="#F4B860" opacity="0.45"/>
+      </g>
+
+      <!-- floating panel anchored bottom-left, overlaps phone -->
+      <rect x="0" y="416" width="232" height="208" rx="0" fill="#0A0F1F" fill-opacity="0.84"/>
+      <rect x="232" y="416" width="6" height="208" fill="#F4B860"/>
+
+      <!-- step / total chip -->
+      <rect x="20" y="436" width="74" height="22" rx="11" fill="#F4B860"/>
+      <text x="57" y="451" text-anchor="middle" font-family="Arial,Helvetica" font-size="11" font-weight="800" fill="#1A2330" letter-spacing="0.5">STEP 1/4</text>
+
+      <!-- headline -->
+      <text x="20" y="492" font-family="Arial,Helvetica" font-weight="900" font-size="26" fill="#FFFFFF" letter-spacing="-0.6">Capture</text>
+      <text x="20" y="520" font-family="Arial,Helvetica" font-weight="900" font-size="26" fill="#FFFFFF" letter-spacing="-0.6">anything,</text>
+      <text x="20" y="548" font-family="Arial,Helvetica" font-weight="900" font-size="26" fill="#F4B860" letter-spacing="-0.6">instantly.</text>
+
+      <!-- body (≤7 words, within 200 px safe width) -->
+      <text x="20" y="582" font-family="Arial,Helvetica" font-size="12" fill="#FFFFFF" fill-opacity="0.86">Voice, photo, or text —</text>
+      <text x="20" y="598" font-family="Arial,Helvetica" font-size="12" fill="#FFFFFF" fill-opacity="0.86">saved in three seconds.</text>
+    </svg>
+  </div>
+  <div class="card-body">
+    <div class="card-num">04</div>
+    <div class="card-name">Editorial Card</div>
+    <span class="slot-tag flow">Slot 2 alt · Flow &nbsp;/&nbsp; Slot 4 · Feature</span>
+    <p class="card-desc">Phone is the dominant hero (full width, slight tilt, clipping the top edge). A solid panel anchors to the bottom-left with a vertical accent rule and overlaps the phone — magazine feel without column-squeeze. The "STEP n/N" chip turns one screen into part of a clear sequence.</p>
+    <ul class="card-spec">
+      <li><b>Containers:</b> <span class="pill solid">solid-panel</span> bottom-left (merged step + headline + body) + <span class="pill chip">chip</span> step indicator</li>
+      <li><b>Roles:</b> badge (step), headline (≤ 3 lines, accent on last), body (≤ 2 lines)</li>
+      <li><b>Use case:</b> step-by-step screenshots · feature walkthroughs · "how it works" sequences</li>
+    </ul>
+  </div>
+</article>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 05 — VERTICAL BENTO                                                       -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<article class="card">
+  <div class="card-art">
+    <svg class="layout" viewBox="0 0 320 640" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="bg5" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#1E2A4A"/>
+          <stop offset="1" stop-color="#244275"/>
+        </linearGradient>
+      </defs>
+      <rect width="320" height="640" fill="url(#bg5)"/>
+      <g stroke="#FFFFFF" stroke-opacity="0.06" fill="none">
+        <circle cx="40" cy="100" r="80"/>
+        <circle cx="290" cy="540" r="120"/>
+      </g>
+
+      <!-- top headline strip -->
+      <rect x="20" y="28" width="280" height="92" rx="14" fill="#0A0F1F" fill-opacity="0.78"/>
+      <text x="36" y="64" font-family="Arial,Helvetica" font-weight="900" font-size="20" fill="#FFFFFF" letter-spacing="-0.4">All your finances,</text>
+      <text x="36" y="92" font-family="Arial,Helvetica" font-weight="900" font-size="20" fill="#F4B860" letter-spacing="-0.4">one clean view.</text>
+
+      <!-- full-width phone hero card -->
+      <rect x="20" y="138" width="280" height="320" rx="18" fill="#FFFFFF" fill-opacity="0.97"/>
+      <g transform="translate(60 158)">
+        <rect width="200" height="280" rx="18" fill="#EEF1F8"/>
+        <!-- stat header inside phone -->
+        <rect x="16" y="20" width="120" height="16" rx="6" fill="#C9D0E0"/>
+        <rect x="16" y="44" width="76" height="12" rx="4" fill="#D9DEEA"/>
+        <!-- chart placeholder -->
+        <rect x="16" y="68" width="168" height="84" rx="10" fill="#5C6BFF" opacity="0.55"/>
+        <circle cx="100" cy="110" r="28" fill="#FFFFFF" opacity="0.6"/>
+        <circle cx="100" cy="110" r="18" fill="#5C6BFF" opacity="0.85"/>
+        <!-- list rows -->
+        <rect x="16" y="166" width="168" height="32" rx="8" fill="#F4B860" opacity="0.55"/>
+        <rect x="16" y="206" width="168" height="32" rx="8" fill="#19674A" opacity="0.45"/>
+        <rect x="16" y="246" width="168" height="22" rx="8" fill="#C9D0E0" opacity="0.7"/>
+      </g>
+
+      <!-- bottom row: two equal stat tiles (safe width per tile = 104 px after 18+12 padding) -->
+      <rect x="20" y="476" width="134" height="120" rx="14" fill="#0A0F1F" fill-opacity="0.78"/>
+      <text x="38" y="504" font-family="Arial,Helvetica" font-size="11" fill="#F4B860" font-weight="800" letter-spacing="0.9">SPEED</text>
+      <text x="38" y="552" font-family="Arial,Helvetica" font-weight="900" font-size="38" fill="#FFFFFF">3s</text>
+      <text x="38" y="580" font-family="Arial,Helvetica" font-size="12" fill="#FFFFFF" fill-opacity="0.86">per entry.</text>
+
+      <rect x="166" y="476" width="134" height="120" rx="14" fill="#F4B860" fill-opacity="0.96"/>
+      <text x="184" y="504" font-family="Arial,Helvetica" font-size="11" fill="#1A2330" font-weight="800" letter-spacing="0.9">PRIVATE</text>
+      <text x="184" y="552" font-family="Arial,Helvetica" font-weight="900" font-size="38" fill="#1A2330">100%</text>
+      <text x="184" y="580" font-family="Arial,Helvetica" font-size="12" fill="#1A2330" fill-opacity="0.82">on device.</text>
+    </svg>
+  </div>
+  <div class="card-body">
+    <div class="card-num">05</div>
+    <div class="card-name">Vertical Bento</div>
+    <span class="slot-tag trust">Slot 3 · Trust &nbsp;/&nbsp; Slot 5 · Feature</span>
+    <p class="card-desc">Three vertical bands: headline strip on top, full-width phone hero in the middle, two equal stat tiles at the bottom. Stat tiles ("3s per entry", "100% on device") are the trust slot's most efficient proof — concrete numbers in branded chips, no testimonials needed.</p>
+    <ul class="card-spec">
+      <li><b>Containers:</b> <span class="pill solid">solid-panel</span> top headline · phone card (white tile) · 2 × <span class="pill solid">solid-panel</span> stat tiles (one inverted in accent)</li>
+      <li><b>Roles:</b> headline (≤ 2 lines) · 2 × (label + stat + caption)</li>
+      <li><b>Use case:</b> feature-rich apps · stat-driven proof · "by the numbers"</li>
+    </ul>
+  </div>
+</article>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 06 — FEATURE STACK                                                       -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<article class="card">
+  <div class="card-art">
+    <svg class="layout" viewBox="0 0 320 640" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="bg6" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#244275"/>
+          <stop offset="1" stop-color="#1A2330"/>
+        </linearGradient>
+      </defs>
+      <rect width="320" height="640" fill="url(#bg6)"/>
+      <circle cx="40" cy="60" r="80" fill="#5C6BFF" opacity="0.20"/>
+      <circle cx="300" cy="600" r="80" fill="#F4B860" opacity="0.18"/>
+
+      <!-- icon disc -->
+      <circle cx="160" cy="74" r="34" fill="#FFFFFF" opacity="0.97"/>
+      <text x="160" y="82" text-anchor="middle" font-family="Arial,Helvetica" font-size="26" font-weight="900" fill="#5C6BFF">A</text>
+
+      <!-- title panel -->
+      <rect x="20" y="124" width="280" height="80" rx="14" fill="#0A0F1F" fill-opacity="0.80"/>
+      <text x="160" y="160" text-anchor="middle" font-family="Arial,Helvetica" font-weight="900" font-size="20" fill="#FFFFFF" letter-spacing="-0.4">Everything you need</text>
+      <text x="160" y="188" text-anchor="middle" font-family="Arial,Helvetica" font-weight="900" font-size="20" fill="#F4B860" letter-spacing="-0.4">to read more.</text>
+
+      <!-- 4 full-width feature rows (text safe-area ≈ 192 px → ~27 chars max at font 12) -->
+      <!-- row 1 -->
+      <rect x="20" y="224" width="280" height="76" rx="14" fill="#0A0F1F" fill-opacity="0.74"/>
+      <circle cx="56" cy="262" r="22" fill="#F4B860"/>
+      <text x="56" y="270" text-anchor="middle" font-family="Arial,Helvetica" font-weight="900" font-size="18" fill="#1A2330">1</text>
+      <text x="92" y="254" font-family="Arial,Helvetica" font-weight="800" font-size="16" fill="#FFFFFF" letter-spacing="-0.2">Sync your library</text>
+      <text x="92" y="278" font-family="Arial,Helvetica" font-size="12" fill="#FFFFFF" fill-opacity="0.84">On every device, instantly.</text>
+
+      <!-- row 2 -->
+      <rect x="20" y="312" width="280" height="76" rx="14" fill="#0A0F1F" fill-opacity="0.74"/>
+      <circle cx="56" cy="350" r="22" fill="#F4B860"/>
+      <text x="56" y="358" text-anchor="middle" font-family="Arial,Helvetica" font-weight="900" font-size="18" fill="#1A2330">2</text>
+      <text x="92" y="342" font-family="Arial,Helvetica" font-weight="800" font-size="16" fill="#FFFFFF" letter-spacing="-0.2">Smart shelves</text>
+      <text x="92" y="366" font-family="Arial,Helvetica" font-size="12" fill="#FFFFFF" fill-opacity="0.84">Tags, moods, and streaks.</text>
+
+      <!-- row 3 -->
+      <rect x="20" y="400" width="280" height="76" rx="14" fill="#0A0F1F" fill-opacity="0.74"/>
+      <circle cx="56" cy="438" r="22" fill="#F4B860"/>
+      <text x="56" y="446" text-anchor="middle" font-family="Arial,Helvetica" font-weight="900" font-size="18" fill="#1A2330">3</text>
+      <text x="92" y="430" font-family="Arial,Helvetica" font-weight="800" font-size="16" fill="#FFFFFF" letter-spacing="-0.2">Offline-first</text>
+      <text x="92" y="454" font-family="Arial,Helvetica" font-size="12" fill="#FFFFFF" fill-opacity="0.84">Read everything, anywhere.</text>
+
+      <!-- row 4 (accent) -->
+      <rect x="20" y="488" width="280" height="76" rx="14" fill="#F4B860" fill-opacity="0.96"/>
+      <circle cx="56" cy="526" r="22" fill="#1A2330"/>
+      <text x="56" y="534" text-anchor="middle" font-family="Arial,Helvetica" font-weight="900" font-size="16" fill="#F4B860">★</text>
+      <text x="92" y="518" font-family="Arial,Helvetica" font-weight="800" font-size="16" fill="#1A2330" letter-spacing="-0.2">Free forever</text>
+      <text x="92" y="542" font-family="Arial,Helvetica" font-size="12" fill="#1A2330" fill-opacity="0.82">No ads, no signup, no fees.</text>
+
+      <!-- footer credibility chip -->
+      <rect x="20" y="582" width="280" height="38" rx="19" fill="#FFFFFF" fill-opacity="0.94"/>
+      <text x="160" y="606" text-anchor="middle" font-family="Arial,Helvetica" font-weight="700" font-size="12" fill="#1E2A4A">Trusted by 250,000+ readers</text>
+    </svg>
+  </div>
+  <div class="card-body">
+    <div class="card-num">06</div>
+    <div class="card-name">Feature Stack</div>
+    <span class="slot-tag trust">Slot 3 · Trust &nbsp;/&nbsp; Slot 9 · Recap</span>
+    <p class="card-desc">No phone — the screenshot itself is the feature list. Icon + headline anchor the top; four full-width numbered rows fill the body (the fourth highlighted in the accent colour); a credibility chip closes. This is the layout 1Password, Bear, Day One, Pocket use for "what's inside" — and it converts highly when used as the slot-3 trust beat.</p>
+    <ul class="card-spec">
+      <li><b>Containers:</b> <span class="pill solid">solid-panel</span> title · 4 × <span class="pill solid">solid-panel</span> feature rows (last in accent) · <span class="pill chip">chip</span> footer</li>
+      <li><b>Roles:</b> headline · 4 × (badge + label + body) · footer caption</li>
+      <li><b>Use case:</b> feature lists · "what's inside" · "how it works" steps</li>
+    </ul>
+  </div>
+</article>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 07 — DUAL PHONE                                                          -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<article class="card">
+  <div class="card-art">
+    <svg class="layout" viewBox="0 0 320 640" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="bg7" x1="0.2" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#3A2E5E"/>
+          <stop offset="1" stop-color="#1E2A4A"/>
+        </linearGradient>
+      </defs>
+      <rect width="320" height="640" fill="url(#bg7)"/>
+      <circle cx="280" cy="80" r="80" fill="#F4B860" opacity="0.18"/>
+      <circle cx="40" cy="540" r="100" fill="#5C6BFF" opacity="0.18"/>
+
+      <!-- top headline panel -->
+      <rect x="20" y="32" width="280" height="120" rx="16" fill="#0A0F1F" fill-opacity="0.78"/>
+      <text x="36" y="74" font-family="Arial,Helvetica" font-weight="900" font-size="22" fill="#FFFFFF" letter-spacing="-0.4">Two views.</text>
+      <text x="36" y="102" font-family="Arial,Helvetica" font-weight="900" font-size="22" fill="#F4B860" letter-spacing="-0.4">One conversation.</text>
+      <text x="36" y="130" font-family="Arial,Helvetica" font-size="13" fill="#FFFFFF" fill-opacity="0.86">Light or dark — your call.</text>
+
+      <!-- back phone (right, tilted) -->
+      <g transform="translate(160 200) rotate(8)">
+        <rect width="150" height="320" rx="22" fill="#1A2330" stroke="#FFFFFF" stroke-opacity="0.2"/>
+        <rect x="8" y="12" width="134" height="296" rx="14" fill="#243046"/>
+        <rect x="18" y="28" width="114" height="16" rx="6" fill="#F4B860" opacity="0.8"/>
+        <rect x="18" y="58" width="80" height="12" rx="4" fill="#FFFFFF" opacity="0.3"/>
+        <rect x="18" y="82" width="114" height="50" rx="8" fill="#5C6BFF" opacity="0.7"/>
+        <rect x="18" y="142" width="114" height="50" rx="8" fill="#19674A" opacity="0.7"/>
+        <rect x="18" y="202" width="114" height="50" rx="8" fill="#F4B860" opacity="0.6"/>
+      </g>
+
+      <!-- front phone (left, opposite tilt) -->
+      <g transform="translate(20 220) rotate(-7)">
+        <rect width="150" height="320" rx="22" fill="#FFFFFF" stroke="#0A0F1F" stroke-opacity="0.2"/>
+        <rect x="8" y="12" width="134" height="296" rx="14" fill="#EEF1F8"/>
+        <rect x="18" y="28" width="114" height="16" rx="6" fill="#5C6BFF" opacity="0.75"/>
+        <rect x="18" y="58" width="80" height="12" rx="4" fill="#C9D0E0"/>
+        <rect x="18" y="82" width="114" height="50" rx="8" fill="#5C6BFF" opacity="0.55"/>
+        <rect x="18" y="142" width="114" height="50" rx="8" fill="#F4B860" opacity="0.55"/>
+        <rect x="18" y="202" width="114" height="50" rx="8" fill="#19674A" opacity="0.45"/>
+      </g>
+
+      <!-- footer chip row -->
+      <rect x="20" y="568" width="135" height="40" rx="20" fill="#FFFFFF" fill-opacity="0.94"/>
+      <text x="87" y="592" text-anchor="middle" font-family="Arial,Helvetica" font-weight="700" font-size="12" fill="#1E2A4A">Light · Dark · Auto</text>
+      <rect x="165" y="568" width="135" height="40" rx="20" fill="#F4B860" fill-opacity="0.95"/>
+      <text x="232" y="592" text-anchor="middle" font-family="Arial,Helvetica" font-weight="700" font-size="12" fill="#1A2330">Built for teams</text>
+      <!-- note: both chip captions fit ≈ 110 px safe width at font 12 weight 700 -->
+    </svg>
+  </div>
+  <div class="card-body">
+    <div class="card-num">07</div>
+    <div class="card-name">Dual Phone</div>
+    <span class="slot-tag feature">Slot 6 · Feature</span>
+    <p class="card-desc">Two phones tilted toward each other showing different states (light/dark, A/B, before/after). Headline panel on top, two chips below. Use when the feature genuinely needs a comparison — A/B or theming. Don't use it just to "show two phones".</p>
+    <ul class="card-spec">
+      <li><b>Containers:</b> <span class="pill solid">solid-panel</span> top (merged headline + subhead) + 2 × <span class="pill chip">chip</span> footer</li>
+      <li><b>Roles:</b> headline (≤ 2 lines), subheadline, 2 chips</li>
+      <li><b>Use case:</b> "before / after" · light/dark themes · A/B variants</li>
+    </ul>
+  </div>
+</article>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 08 — TILTED CARD                                                         -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<article class="card">
+  <div class="card-art">
+    <svg class="layout" viewBox="0 0 320 640" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="bg8" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#2E5E7E"/>
+          <stop offset="1" stop-color="#3A2E5E"/>
+        </linearGradient>
+      </defs>
+      <rect width="320" height="640" fill="url(#bg8)"/>
+      <circle cx="50" cy="80" r="60" fill="#F4B860" opacity="0.2"/>
+      <circle cx="290" cy="560" r="80" fill="#5C6BFF" opacity="0.2"/>
+
+      <!-- floating tilted card holding the phone -->
+      <g transform="translate(60 80) rotate(-4 130 200)">
+        <rect width="200" height="400" rx="32" fill="#FFFFFF" fill-opacity="0.98"/>
+        <rect x="14" y="16" width="172" height="368" rx="22" fill="#EEF1F8"/>
+        <rect x="28" y="36" width="144" height="20" rx="6" fill="#C9D0E0"/>
+        <rect x="28" y="66" width="100" height="14" rx="4" fill="#D9DEEA"/>
+        <rect x="28" y="96" width="144" height="68" rx="12" fill="#5C6BFF" opacity="0.6"/>
+        <rect x="28" y="176" width="144" height="68" rx="12" fill="#F4B860" opacity="0.6"/>
+        <rect x="28" y="256" width="144" height="68" rx="12" fill="#19674A" opacity="0.5"/>
+      </g>
+
+      <!-- bottom panel for text (sits over the bottom of the phone card) -->
+      <rect x="20" y="490" width="280" height="130" rx="18" fill="#0A0F1F" fill-opacity="0.82"/>
+      <text x="36" y="528" font-family="Arial,Helvetica" font-weight="900" font-size="22" fill="#FFFFFF" letter-spacing="-0.3">A pocket-sized</text>
+      <text x="36" y="554" font-family="Arial,Helvetica" font-weight="900" font-size="22" fill="#F4B860" letter-spacing="-0.3">workspace.</text>
+      <text x="36" y="586" font-family="Arial,Helvetica" font-size="13" fill="#FFFFFF" fill-opacity="0.86">Notes, tasks, files — anywhere.</text>
+    </svg>
+  </div>
+  <div class="card-body">
+    <div class="card-num">08</div>
+    <div class="card-name">Tilted Card</div>
+    <span class="slot-tag feature">Slot 7 · Feature (premium)</span>
+    <p class="card-desc">Phone presented inside a tilted floating card (gives a "product photo" feel — drop shadow + slight rotation), with a solid headline panel anchored at the bottom. Use for the most polished / brand-forward feature; works best when the phone screen itself is visually strong.</p>
+    <ul class="card-spec">
+      <li><b>Containers:</b> phone in card · <span class="pill solid">solid-panel</span> bottom (merged headline + subhead)</li>
+      <li><b>Roles:</b> headline (≤ 2 lines, accent on line 2), subheadline (≤ 2 lines)</li>
+      <li><b>Use case:</b> brand-forward / premium feel · device-as-hero shots</li>
+    </ul>
+  </div>
+</article>
+
+</section>
+
+<footer style="padding: 24px 48px 48px; color: var(--ink-2); font-size: 12px; border-top: 1px solid var(--line); background: #fff;">
+  Source: <code>design/layouts-phone-portrait-shots.html</code> · render with any browser ·
+  every container's alpha is recomputed at render time against the actual sampled bg, so the mockups above
+  represent the worst-case target (alpha 0.55–0.85). Production output will use the minimum alpha that
+  clears WCAG AA for the actual pixels. Story arc and slot mapping per
+  <code>skills/creative-design-principles</code> §1.1.
+</footer>
+
+<script>
+  // Populate the "25% zoom test" thumbnail row by cloning each card's
+  // layout SVG. Same SVG, scaled to ≈ App Store search-results thumbnail
+  // size (~75 px wide). If a layout's headline disappears here, that
+  // layout is not converting at decision-distance.
+  (function () {
+    var row = document.getElementById('thumb-row');
+    if (!row) return;
+    var cards = document.querySelectorAll('.grid .card');
+    cards.forEach(function (card) {
+      var src = card.querySelector('svg.layout');
+      var name = (card.querySelector('.card-name') || {}).textContent || '';
+      var num  = (card.querySelector('.card-num')  || {}).textContent || '';
+      if (!src) return;
+      var clone = src.cloneNode(true);
+      clone.removeAttribute('class');
+      clone.setAttribute('width',  '75');
+      clone.setAttribute('height', '150');
+      var cell = document.createElement('div');
+      cell.className = 'thumb-cell';
+      cell.appendChild(clone);
+      var label = document.createElement('div');
+      label.className = 'thumb-label';
+      label.textContent = num + ' · ' + name;
+      cell.appendChild(label);
+      row.appendChild(cell);
+    });
+  })();
+</script>
+
+</body>
+</html>

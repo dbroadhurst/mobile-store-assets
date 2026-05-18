@@ -1,134 +1,161 @@
 import sharp from 'sharp';
-import { escapeXml, fitText, makeDeviceFrame, resizeBg, rotateBuffer, parseHeadline, screenshotAspect, TEXT_SHADOW_DEFS } from '../helpers.js';
-import type { LayoutInput } from '../types.js';
+import path from 'path';
+import fs from 'fs';
+import { resizeBg, stripBrackets, makeDeviceFrame, screenshotAspect, rotateBuffer, fitWrapped } from '../helpers.js';
+import { estimateTextBbox, unionBbox } from '../contrast-gate.js';
+import { paintContainersSvg, type ContainerZone } from '../containers.js';
+import type { LayoutInput, LayoutResult, TextZone } from '../types.js';
 
-// Layout 08 — DUAL PHONE OVERLAP  (followit)
-// Two phones at slight opposing rotations, overlapping. Pill-highlighted
-// headline above (using [bracket] syntax). Subheadline at the bottom.
-// If `screenshotPathSecondary` isn't provided, both phones reuse the primary.
-export async function dualPhoneOverlap(input: LayoutInput): Promise<Buffer> {
+// v2 #7 — DUAL PHONE
+// Two phones tilted toward each other (one light theme, one dark via secondary
+// source). Headline panel above, optional chip row below.
+export async function dualPhone(input: LayoutInput): Promise<LayoutResult> {
   const { background, screenshotPath, screenshotPathSecondary, screenshot, theme, targetWidth: W, targetHeight: H } = input;
   const bg = await resizeBg(background, W, H);
-  if (!screenshotPath) throw new Error('dual-phone-overlap requires a screenshot source');
+  if (!screenshotPath) throw new Error('dual-phone requires a screenshot source');
 
-  const tokens = parseHeadline(screenshot.headline);
-  const padX = Math.floor(W * 0.07);
-  const safe = W - padX * 2;
+  const headline = stripBrackets(screenshot.headline);
+  const subheadline = screenshot.subheadline;
+  const chips = (screenshot.features ?? []).slice(0, 2).filter(Boolean);
 
-  // Headline rendered with optional pill highlight on bracketed words.
-  const headlineSz = fitText('PLACEHOLDER', safe, Math.floor(W * 0.075), 0.58);
-  const lineH = Math.floor(headlineSz * 1.20);
-  const headlineY0 = Math.floor(H * 0.13);
+  const sidePad = Math.floor(W * 0.05);
+  const safe = W - sidePad * 2;
+  const zones: ContainerZone[] = [];
 
-  // Highlighted runs render as bold accent-colour text (no pill background).
-  const lines = layoutTokens(tokens, 14);
-  const headlineSvgParts: string[] = [];
-  let lineY = headlineY0;
-  for (const line of lines) {
-    let cursorX = padX;
-    for (const tok of line) {
-      const text = tok.text.trim();
-      if (!text) { cursorX += headlineSz * 0.30; continue; }
-      const charW = headlineSz * (tok.highlight ? 0.62 : 0.55);
-      const textW = text.length * charW;
-      const fill = tok.highlight ? theme.accent : theme.headline_color;
-      const weight = tok.highlight ? 800 : 500;
-      headlineSvgParts.push(
-        `<text x="${cursorX}" y="${lineY}" font-family="Arial,Helvetica,sans-serif"
-          font-size="${headlineSz}" font-weight="${weight}" fill="${fill}">${escapeXml(text)}</text>`,
-      );
-      cursorX += textW + headlineSz * 0.20;
-    }
-    lineY += lineH;
+  // Top headline panel (merged headline + subhead).
+  const headTop = Math.floor(H * 0.05);
+  const headAreaH = Math.floor(H * 0.20);
+  const headWrap = fitWrapped(headline, safe - Math.floor(W * 0.06), Math.floor(headAreaH * 0.55),
+    Math.floor(W * 0.066), 0.6, 1.10, { maxLines: 2, minSize: Math.floor(W * 0.040) });
+  const headLineH = Math.floor(headWrap.size * 1.10);
+  const headTextLeft = sidePad + Math.floor(W * 0.03);
+  const headTextY0 = headTop + Math.floor(headAreaH * 0.20);
+  headWrap.lines.forEach((line, i) => {
+    const baseline = headTextY0 + (i + 1) * headLineH;
+    const bbox = estimateTextBbox({ x: headTextLeft, y: baseline, text: line, fontSize: headWrap.size, anchor: 'start', charRatio: 0.6 });
+    const isAccent = i === headWrap.lines.length - 1 && headWrap.lines.length > 1;
+    zones.push({
+      style: 'solid-panel',
+      role: 'headline',
+      text: line,
+      bbox,
+      color: isAccent ? theme.accent : theme.headline_color,
+      fontSize: headWrap.size,
+      isLargeText: true,
+      anchor: 'start',
+      textX: headTextLeft,
+      textY: baseline,
+      fontWeight: 900,
+      letterSpacing: -0.4,
+    });
+  });
+  if (subheadline) {
+    const subSize = Math.floor(headWrap.size * 0.45);
+    const subY = headTextY0 + headWrap.lines.length * headLineH + Math.floor(H * 0.020) + subSize;
+    const bbox = estimateTextBbox({ x: headTextLeft, y: subY, text: subheadline, fontSize: subSize, anchor: 'start', charRatio: 0.55 });
+    zones.push({
+      style: 'solid-panel',
+      role: 'subheadline',
+      text: subheadline,
+      bbox,
+      color: theme.subheadline_color,
+      fontSize: subSize,
+      isLargeText: false,
+      anchor: 'start',
+      textX: headTextLeft,
+      textY: subY,
+      fontWeight: 500,
+    });
   }
 
-  // Phones: each ~50% canvas wide, opposing rotations, overlapping. Each
-  // phone's height is derived from its OWN screenshot's aspect, so a dual-phone
-  // composition can mix an iPhone and an iPad source without clipping.
-  const phoneW = Math.floor(W * 0.50);
-  const backH  = Math.round(phoneW * await screenshotAspect(screenshotPath));
-  const backFrame = await makeDeviceFrame(screenshotPath, phoneW, backH);
-  const backRotated = await rotateBuffer(backFrame, -6);
-  const backMeta = await sharp(backRotated).metadata();
+  // Two tilted phones below.
+  const phoneAreaTop = headTop + headAreaH + Math.floor(H * 0.03);
+  const phoneAreaBottom = chips.length > 0 ? H - Math.floor(H * 0.10) : H - Math.floor(H * 0.04);
+  const phoneAreaH = phoneAreaBottom - phoneAreaTop;
+  const ssAspect = await screenshotAspect(screenshotPath);
+  const phoneW = Math.floor(W * 0.46);
+  const phoneH = Math.round(phoneW * ssAspect);
+  const phoneRaw = await makeDeviceFrame(screenshotPath, phoneW, phoneH, 0, 0, 'top', 'cover');
+  const phoneFront = await rotateBuffer(phoneRaw, -6);
 
-  const frontSourcePath = screenshotPathSecondary ?? screenshotPath;
-  const frontH = Math.round(phoneW * await screenshotAspect(frontSourcePath));
-  const frontFrame = await makeDeviceFrame(frontSourcePath, phoneW, frontH);
-  const frontRotated = await rotateBuffer(frontFrame, 5);
-  const frontMeta = await sharp(frontRotated).metadata();
+  // Back phone (secondary source if present, else same).
+  const backSourcePath = screenshotPathSecondary && fs.existsSync(screenshotPathSecondary)
+    ? screenshotPathSecondary
+    : screenshotPath;
+  const backRaw = await makeDeviceFrame(backSourcePath, phoneW, phoneH, 0, 0, 'top', 'cover');
+  const backTilted = await rotateBuffer(backRaw, 6);
 
-  // Layout: back phone top-left-ish, front phone slightly right and lower
-  const backTop  = Math.floor(H * 0.32);
-  const backLeft = Math.floor(W * 0.06);
-  const frontTop  = Math.floor(H * 0.36);
-  const frontLeft = Math.floor(W * 0.42);
+  const frontMeta = await sharp(phoneFront).metadata();
+  const backMeta = await sharp(backTilted).metadata();
+  const frontW = frontMeta.width ?? phoneW;
+  const frontH = frontMeta.height ?? phoneH;
+  const backW = backMeta.width ?? phoneW;
+  const backH = backMeta.height ?? phoneH;
+  // Position back phone slightly right + front phone slightly left, overlapping.
+  const frontLeft = Math.floor(W * 0.16);
+  const frontTop = phoneAreaTop + Math.max(0, Math.floor((phoneAreaH - frontH) / 2));
+  const backLeft = Math.floor(W * 0.40);
+  const backTop = phoneAreaTop + Math.max(0, Math.floor((phoneAreaH - backH) / 2));
 
-  // Clip overflow
-  const clipBack = backTop + backMeta.height! - H;
-  const backFinal = clipBack > 0
-    ? await sharp(backRotated).extract({ left: 0, top: 0, width: backMeta.width!, height: H - backTop }).png().toBuffer()
-    : backRotated;
-  const clipFront = frontTop + frontMeta.height! - H;
-  const frontFinal = clipFront > 0
-    ? await sharp(frontRotated).extract({ left: 0, top: 0, width: frontMeta.width!, height: H - frontTop }).png().toBuffer()
-    : frontRotated;
-
-  // Subheadline at bottom — wrap + fit so long copy doesn't clip the canvas.
-  const subWrapped = wrap(screenshot.subheadline ?? '', 38);
-  const subSz = fitText(longest(subWrapped), safe, Math.floor(W * 0.048), 0.55);
-  const subLineH = Math.floor(subSz * 1.30);
-  const totalSubH = subWrapped.length * subLineH;
-  const subY0 = H - Math.floor(H * 0.05) - totalSubH + subSz;
-  const subSvg = screenshot.subheadline ? subWrapped.map((line, i) => `
-    <text x="${padX}" y="${subY0 + i * subLineH}" font-family="Arial,Helvetica,sans-serif"
-      font-size="${subSz}" fill="${theme.subheadline_color}">${escapeXml(line)}</text>`).join('') : '';
-
-  const overlay = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
-    ${TEXT_SHADOW_DEFS}
-    ${headlineSvgParts.join('\n')}
-    ${subSvg}
-  </svg>`;
-
-  return sharp(bg)
+  // Compose phones (back first so front overlaps).
+  const bgWithPhones = await sharp(bg)
     .composite([
-      { input: backFinal,            top: backTop,  left: backLeft  },
-      { input: frontFinal,           top: frontTop, left: frontLeft },
-      { input: Buffer.from(overlay), top: 0,        left: 0         },
+      { input: backTilted,  top: backTop,  left: backLeft  },
+      { input: phoneFront,  top: frontTop, left: frontLeft },
     ])
     .png()
     .toBuffer();
-}
 
-function longest(lines: string[]): string {
-  return lines.reduce((a, b) => a.length > b.length ? a : b, '');
-}
-function wrap(text: string, target: number): string[] {
-  const words = text.split(/\s+/).filter(Boolean);
-  const lines: string[] = [];
-  let cur = '';
-  for (const w of words) {
-    const next = cur ? `${cur} ${w}` : w;
-    if (next.length > target && cur) { lines.push(cur); cur = w; } else { cur = next; }
+  // Footer chips (optional).
+  if (chips.length) {
+    const chipSize = Math.floor(W * 0.034);
+    const chipH = Math.floor(chipSize * 2.3);
+    const padX = chipSize * 0.7;
+    const gap = chipSize * 0.6;
+    const charW = chipSize * 0.6;
+    const chipWidths = chips.map(c => Math.ceil(c.length * charW + padX * 2));
+    const rowW = chipWidths.reduce((a, b) => a + b, 0) + gap * (chips.length - 1);
+    const chipY = H - chipH - Math.floor(H * 0.025);
+    let xCursor = (W - rowW) / 2;
+    chips.forEach((label, i) => {
+      const w = chipWidths[i];
+      const isAccent = i === chips.length - 1 && chips.length > 1;
+      zones.push({
+        style: 'chip',
+        role: 'badge',
+        text: label,
+        bbox: { x: xCursor, y: chipY, w, h: chipH },
+        color: isAccent ? '#1A2330' : theme.headline_color,
+        fontSize: chipSize,
+        isLargeText: false,
+        anchor: 'middle',
+        textX: xCursor + w / 2,
+        textY: chipY + Math.floor(chipH * 0.66),
+        fillOverride: isAccent ? theme.accent : '#FFFFFF',
+        fontWeight: 700,
+      });
+      xCursor += w + gap;
+    });
   }
-  if (cur) lines.push(cur);
-  return lines.slice(0, 2);
-}
+  void path;
 
-function layoutTokens(tokens: { text: string; highlight: boolean }[], targetChars: number) {
-  const lines: { text: string; highlight: boolean }[][] = [];
-  let current: { text: string; highlight: boolean }[] = [];
-  let len = 0;
-  for (const tok of tokens) {
-    const tlen = tok.text.length;
-    if (len + tlen > targetChars && current.length > 0) {
-      lines.push(current);
-      current = [tok];
-      len = tlen;
-    } else {
-      current.push(tok);
-      len += tlen;
-    }
+  const overlay = await paintContainersSvg(bgWithPhones, zones, { canvasW: W, canvasH: H });
+  const buffer = await sharp(bgWithPhones)
+    .composite([{ input: Buffer.from(overlay), top: 0, left: 0 }])
+    .png()
+    .toBuffer();
+
+  const gateZones: TextZone[] = [];
+  const headZones = zones.filter(z => z.role === 'headline');
+  if (headZones.length) {
+    gateZones.push({
+      role: 'headline',
+      text: headZones.map(z => z.text).join(' '),
+      bbox: unionBbox(headZones.map(z => z.bbox)),
+      color: headZones[0].color,
+      fontSize: headZones[0].fontSize,
+      isLargeText: true,
+    });
   }
-  if (current.length) lines.push(current);
-  return lines.slice(0, 3);
+  return { buffer, zones: gateZones };
 }

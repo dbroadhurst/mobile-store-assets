@@ -100,6 +100,67 @@
   }
   .global-comment textarea:focus { outline: none; border-color: var(--accent); }
 
+  /* Per-layout-type review panel — comment once per layout instead of once per
+     image. Cards mirror the per-image card vocabulary so the visual language
+     stays consistent. */
+  .layout-types { max-width: 1600px; margin: 28px auto 0; padding: 0 32px; }
+  .layout-types h2 {
+    font-size: 13px; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 2px;
+    margin: 0 0 14px;
+    display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap;
+  }
+  .layout-types h2 .sub {
+    font-weight: 400; text-transform: none; letter-spacing: 0;
+    color: var(--dim); font-size: 12px;
+  }
+  .layout-grid {
+    display: grid; gap: 14px;
+    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  }
+  .layout-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px; display: flex; gap: 12px;
+    transition: border-color 0.15s;
+  }
+  .layout-card[data-vote="up"]   { border-color: var(--up); }
+  .layout-card[data-vote="down"] { border-color: var(--down); }
+  .layout-card .thumb {
+    width: 84px; min-width: 84px;
+    background: #0a0a0c; border-radius: 6px; overflow: hidden;
+    cursor: zoom-in;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .layout-card .thumb img { width: 100%; height: 100%; object-fit: contain; }
+  .layout-card .body { flex: 1; display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+  .layout-card .name {
+    display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap;
+    font-size: 12px;
+  }
+  .layout-card .name .layout-name {
+    color: var(--accent); font-family: ui-monospace, monospace; font-weight: 600;
+  }
+  .layout-card .count { color: var(--dim); font-size: 11px; }
+  .layout-card .vote-row { display: flex; gap: 5px; }
+  .layout-card .vote-btn {
+    flex: 1; padding: 4px 8px;
+    font-size: 12px;
+    border-radius: 5px;
+    background: var(--card); color: var(--text);
+    border: 1px solid var(--border);
+    cursor: pointer;
+  }
+  .layout-card .vote-btn:hover { background: var(--card-hover); }
+  .layout-card .vote-btn.up.active   { background: var(--up-bg);   border-color: var(--up);   color: var(--up);   }
+  .layout-card .vote-btn.down.active { background: var(--down-bg); border-color: var(--down); color: var(--down); }
+  .layout-card textarea.note {
+    width: 100%; min-height: 56px; padding: 7px 9px;
+    background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 5px;
+    resize: vertical; font-family: inherit; font-size: 12px; line-height: 1.4;
+  }
+  .layout-card textarea.note:focus { outline: none; border-color: var(--accent); }
+
   .section {
     max-width: 1600px; margin: 28px auto 0; padding: 0 32px;
   }
@@ -174,6 +235,28 @@
   .status { color: var(--dim); font-size: 12px; margin-left: 8px; }
   .status.saved { color: var(--up); }
   .summary { color: var(--muted); font-size: 12px; }
+
+  /* Readability-gate badge in the card meta. Surfaces contrast / font-size
+     violations found by the contrast-gate audit. Click to open a details panel
+     with per-zone findings. */
+  .gate-badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    margin-left: 8px; padding: 2px 7px;
+    border-radius: 10px; font-size: 10px; font-weight: 600;
+    cursor: pointer; border: 1px solid transparent;
+  }
+  .gate-badge.fail { background: #3a1c1c; color: #ff8e8e; border-color: #5a2828; }
+  .gate-badge.warn { background: #3a2f1c; color: #ffd28e; border-color: #5a4628; }
+  .gate-badge.pass { background: #1c3a25; color: #7eea9e; border-color: #285a37; }
+  .gate-details {
+    margin: 6px 0 0; padding: 8px 10px;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+    font-size: 11px; line-height: 1.5; color: var(--muted);
+  }
+  .gate-details ul { margin: 4px 0 0; padding-left: 18px; }
+  .gate-details li.contrast { color: #ff8e8e; }
+  .gate-details li.font     { color: #ffd28e; }
+  .gate-details[hidden] { display: none; }
 
   details.json-viewer {
     max-width: 1600px; margin: 32px auto 64px; padding: 0 32px;
@@ -262,6 +345,11 @@
   <textarea id="global" placeholder="Direction notes, what's working, what's not, what to try next..."></textarea>
 </div>
 
+<section class="layout-types">
+  <h2>Per-layout comments <span class="sub">— one comment per layout type · applies to every image rendered with that layout</span></h2>
+  <div class="layout-grid" id="layout-grid"></div>
+</section>
+
 <div id="sections"></div>
 
 <details class="json-viewer">
@@ -279,7 +367,7 @@
 // via file:// (no fetch — browsers block sibling-file fetches over file://).
 const MANIFEST = /*__MANIFEST_START__*/{{MANIFEST_JSON}}/*__MANIFEST_END__*/;
 
-const STORAGE_KEY = 'mobile-store-assets:review:{{VERSION}}:v3';
+const STORAGE_KEY = 'mobile-store-assets:review:{{VERSION}}:v4';
 
 let manifest = MANIFEST;
 let state = loadState();
@@ -329,6 +417,7 @@ let state = loadState();
 
   setStatus(`${manifest.items.length} renders loaded`, false);
   updateSummary();
+  buildLayoutCards();
   render();
   updateJsonPreview();
 })();
@@ -421,6 +510,13 @@ function card(item) {
   const aspect = (item.width && item.height)
     ? `${item.width} / ${item.height}`
     : '1320 / 2868';
+  // Readability-gate badge — contrast and font-size violations from the
+  // post-render audit. No badge if the layout declared no zones (legacy /
+  // text-free); pass-badge if zones audited cleanly; fail-badge with details
+  // when something missed WCAG AA / the font-size floor.
+  const gates = item.gates || null;
+  const gateMarkup = renderGateBadge(item.key, gates);
+
   fig.innerHTML = `
     <div class="thumb-wrap" style="aspect-ratio: ${aspect}">
       <img src="${escapeHtml(item.src)}" alt="${escapeHtml(item.key)}" loading="lazy"
@@ -430,8 +526,10 @@ function card(item) {
       <div class="name">
         <span>Set ${escapeHtml(item.set)} · ${escapeHtml(item.screenshot)}</span>
         <span class="layout">${escapeHtml(item.layout)}</span>
+        ${gateMarkup.badge}
       </div>
       <div class="sub">${escapeHtml(item.platform)} · ${escapeHtml(item.slot)}</div>
+      ${gateMarkup.details}
     </div>
     <div class="controls">
       <div class="vote-row">
@@ -464,7 +562,45 @@ function card(item) {
   fig.querySelector('.thumb-wrap').addEventListener('click', () => {
     openLightbox(item.src, `Set ${item.set} · ${item.screenshot} · ${item.platform} · ${item.layout}`);
   });
+
+  // Gate-badge toggle — clicking the badge expands the per-zone details.
+  const badge = fig.querySelector('.gate-badge');
+  const details = fig.querySelector('.gate-details');
+  if (badge && details) {
+    badge.addEventListener('click', (e) => {
+      e.stopPropagation();
+      details.hidden = !details.hidden;
+    });
+  }
+
   return fig;
+}
+
+// Build the gate badge + details markup for one item. Returns two strings
+// (badge inline, details panel below the meta block). When gates is null or
+// undefined, returns empty markup — legacy layouts that haven't migrated to
+// the zone-declaration API are gate-exempt and show no badge.
+function renderGateBadge(_key, gates) {
+  if (!gates) return { badge: '', details: '' };
+  const contrast = gates.contrast ?? [];
+  const fontSize = gates.fontSize ?? [];
+  const total = contrast.length + fontSize.length;
+  if (total === 0) {
+    return {
+      badge: `<span class="gate-badge pass" title="Readability gate passed">✓ gates</span>`,
+      details: '',
+    };
+  }
+  const liContrast = contrast.map(v =>
+    `<li class="contrast">${escapeHtml(v.role)} contrast ${v.measured}:1 &lt; ${v.target}:1 — "${escapeHtml((v.text || '').slice(0, 80))}"</li>`
+  ).join('');
+  const liFont = fontSize.map(v =>
+    `<li class="font">${escapeHtml(v.role)} font ${v.fontSize}px below ${v.minimum}px floor</li>`
+  ).join('');
+  return {
+    badge: `<span class="gate-badge fail" title="${total} readability issue${total > 1 ? 's' : ''}">⚠ ${total}</span>`,
+    details: `<div class="gate-details" hidden><strong>Readability gate</strong><ul>${liContrast}${liFont}</ul></div>`,
+  };
 }
 
 function openLightbox(src, cap) {
@@ -479,12 +615,91 @@ window.addEventListener('keydown', e => {
   if (e.key === 'Escape') document.getElementById('lightbox').classList.remove('open');
 });
 
+// Build the per-layout review panel. One card per unique layout in the
+// manifest. Vote + comment is stored per layout name; export bundles it
+// separately from per-image reviews so consumers can act on layout-level
+// feedback without scanning all images.
+function buildLayoutCards() {
+  const root = document.getElementById('layout-grid');
+  if (!root || !manifest) return;
+  root.innerHTML = '';
+  // Group items by layout; pick the first item as the representative thumb.
+  const byLayout = new Map();
+  for (const it of manifest.items) {
+    if (!byLayout.has(it.layout)) byLayout.set(it.layout, { sample: it, count: 0 });
+    byLayout.get(it.layout).count++;
+  }
+  if (byLayout.size === 0) return;
+
+  const entries = [...byLayout.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  for (const [name, { sample, count }] of entries) {
+    const review = state.layout_reviews[name] ?? { vote: null, comment: '' };
+    const card = document.createElement('div');
+    card.className = 'layout-card';
+    card.dataset.layout = name;
+    card.dataset.vote = review.vote || '';
+
+    const aspect = (sample.width && sample.height)
+      ? `${sample.width} / ${sample.height}`
+      : '9 / 19.5';
+    const slot = sample.slot ? ` · ${escapeHtml(sample.slot)}` : '';
+    card.innerHTML = `
+      <div class="thumb" style="aspect-ratio: ${aspect}">
+        <img src="${escapeHtml(sample.src)}" alt="${escapeHtml(name)}" loading="lazy"
+             onerror="this.style.opacity=0.2"/>
+      </div>
+      <div class="body">
+        <div class="name">
+          <span class="layout-name">${escapeHtml(name)}</span>
+          <span class="count">${count} render${count > 1 ? 's' : ''}${slot}</span>
+        </div>
+        <div class="vote-row">
+          <button class="vote-btn up   ${review.vote === 'up'   ? 'active' : ''}" data-vote="up">👍</button>
+          <button class="vote-btn down ${review.vote === 'down' ? 'active' : ''}" data-vote="down">👎</button>
+        </div>
+        <textarea class="note"
+          placeholder="Comments for &quot;${escapeHtml(name)}&quot; — applies to all ${count} render${count > 1 ? 's' : ''} using this layout">${escapeHtml(review.comment ?? '')}</textarea>
+      </div>
+    `;
+    card.querySelectorAll('.vote-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const vote = btn.dataset.vote;
+        const cur = state.layout_reviews[name] ?? { vote: null, comment: '' };
+        cur.vote = cur.vote === vote ? null : vote;
+        state.layout_reviews[name] = cur;
+        card.dataset.vote = cur.vote || '';
+        card.querySelectorAll('.vote-btn').forEach(b =>
+          b.classList.toggle('active', cur.vote === b.dataset.vote));
+        saveState();
+      });
+    });
+    const ta = card.querySelector('textarea.note');
+    ta.addEventListener('input', debounce(() => {
+      const cur = state.layout_reviews[name] ?? { vote: null, comment: '' };
+      cur.comment = ta.value;
+      state.layout_reviews[name] = cur;
+      saveState();
+    }, 300));
+    card.querySelector('.thumb').addEventListener('click', () => {
+      openLightbox(sample.src, `Layout · ${name} (sample: ${sample.set}/${sample.screenshot}/${sample.platform})`);
+    });
+    root.appendChild(card);
+  }
+}
+
 function loadState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const s = JSON.parse(raw);
+      // Forward-compatible shape: ensure layout_reviews exists for older state.
+      s.layout_reviews ??= {};
+      s.reviews ??= {};
+      s.filters ??= {};
+      return s;
+    }
   } catch (e) {}
-  return { global_comment: '', reviews: {}, grouping: 'set', filters: {} };
+  return { global_comment: '', layout_reviews: {}, reviews: {}, grouping: 'set', filters: {} };
 }
 function saveState() {
   state.saved_at = new Date().toISOString();
@@ -501,9 +716,22 @@ function stateForExport() {
   const exported = {
     version: manifest?.version ?? '',
     global_comment: state.global_comment ?? '',
+    layout_reviews: {},
     reviews: {},
     saved_at: new Date().toISOString(),
   };
+  // Per-layout reviews — one entry per layout type the user voted on or commented.
+  const layoutReviews = state.layout_reviews ?? {};
+  for (const [layout, r] of Object.entries(layoutReviews)) {
+    if (!r || (r.vote == null && !r.comment)) continue;
+    // Count of renders that use this layout (gives reviewers context downstream).
+    const count = (manifest?.items ?? []).filter(i => i.layout === layout).length;
+    exported.layout_reviews[layout] = {
+      layout, count,
+      vote: r.vote, comment: r.comment,
+    };
+  }
+  // Per-image reviews — unchanged.
   for (const item of (manifest?.items ?? [])) {
     const r = state.reviews[item.key];
     if (!r || (r.vote == null && !r.comment)) continue;
@@ -561,8 +789,8 @@ document.getElementById('copy').addEventListener('click', async () => {
 });
 
 document.getElementById('reset').addEventListener('click', () => {
-  if (!confirm('Clear all votes and comments?')) return;
-  state = { global_comment: '', reviews: {}, grouping: state.grouping, filters: state.filters };
+  if (!confirm('Clear all votes and comments (per-image AND per-layout)?')) return;
+  state = { global_comment: '', layout_reviews: {}, reviews: {}, grouping: state.grouping, filters: state.filters };
   localStorage.removeItem(STORAGE_KEY);
   location.reload();
 });

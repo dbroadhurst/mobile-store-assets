@@ -2,37 +2,38 @@
 
 // Layout names. Each maps to a module under src/layouts/.
 //
-// Portrait layouts (canvas is taller than wide):
-//   text-hero               — no phone; bold headline + trust badge + decorative motif
-//   caption-below           — phone fills upper canvas; brand mark + caption beneath
-//   uppercase-top           — ALL-CAPS title at top; phone full-bleed bottom (may bleed off)
-//   logo-tilted             — headline at top; phone tilted at bottom
-//   aurora-hero             — radial-mesh aurora bg, oversized ALL-CAPS headline, centred phone
-//   bento                   — 2-col bento grid: phone tile left + 3 feature tiles right
-//   editorial-split         — magazine-cover: oversized stat/word + headline + phone right
-//   highlight-pill          — mixed-weight headline with bright pill behind a [bracketed] keyword
-//   side-list               — vertical pill list on the left; phone right
-//   card-tilted             — white rounded card (caption + badge) overlapping a tilted phone
-//   dual-phone-overlap      — two screenshots overlapping at slight opposing rotations
+// All layouts use container-first composition (every text run sits on a
+// computed-alpha solid-panel / soft-band / chip). See SKILL.md §10–11 and
+// design/layouts-*.html for the visual atlas.
 //
-// Landscape layouts (canvas is wider than tall — for landscape-native apps):
-//   landscape-split         — text band top, phone fills lower band (no overlap on wide shots)
-//   landscape-hero          — phone large centre, headline above
-//   landscape-text-only     — no-phone CTA closer at landscape (text-hero equivalent)
+// Portrait (canvas is taller than wide — for portrait apps):
+//   hero-type          — icon + benefit headline + chips; no phone. Value / CTA slot.
+//   caption-band       — phone hero + bottom soft-band caption. Workhorse Flow.
+//   headline-masthead  — solid panel + eyebrow chip top + phone below. Value alt.
+//   editorial-card     — full-width tilted phone + bottom-left panel with accent rule. Flow / Feature.
+//   vertical-bento     — headline strip + phone tile + 2 stat tiles. Trust / Feature.
+//   feature-stack      — icon + headline + 4 numbered rows; no phone. Trust.
+//   dual-phone         — two phones tilted (light + dark) + headline panel. Feature.
+//   tilted-card        — phone in floating tilted card + bottom panel. Feature.
 //
+// Landscape (canvas is wider than tall — for landscape-native apps):
+//   landscape-split     — text band top, phone fills lower band
+//   landscape-hero      — phone large centre, headline above
+//   landscape-text-only — no-phone CTA closer at landscape
+//
+// Older spec.yaml names (no longer in the canonical Layout union) from earlier spec.yaml files (text-hero, caption-below, etc.)
+// are auto-mapped to the canonical names above by `LEGACY_LAYOUT_ALIASES` in
+// src/index.ts — no spec.yaml edits needed.
 export type Layout =
   // Portrait
-  | 'text-hero'
-  | 'caption-below'
-  | 'uppercase-top'
-  | 'logo-tilted'
-  | 'aurora-hero'
-  | 'bento'
-  | 'editorial-split'
-  | 'highlight-pill'
-  | 'side-list'
-  | 'card-tilted'
-  | 'dual-phone-overlap'
+  | 'hero-type'
+  | 'caption-band'
+  | 'headline-masthead'
+  | 'editorial-card'
+  | 'vertical-bento'
+  | 'feature-stack'
+  | 'dual-phone'
+  | 'tilted-card'
   // Landscape
   | 'landscape-split'
   | 'landscape-hero'
@@ -43,17 +44,15 @@ export type Orientation = 'portrait' | 'landscape';
 // Which layouts need a phone screenshot source. text-hero is the only no-phone
 // layout. Unknown / legacy layout names fall through here as `false` and are
 // rendered using the dispatcher's text-hero fallback rather than being skipped.
+// hero-type and feature-stack are the only no-phone layouts; everything else
+// needs a screenshot source.
 export const PHONE_REQUIRED_LAYOUTS: ReadonlySet<Layout> = new Set([
-  'caption-below',
-  'uppercase-top',
-  'logo-tilted',
-  'aurora-hero',
-  'bento',
-  'editorial-split',
-  'highlight-pill',
-  'side-list',
-  'card-tilted',
-  'dual-phone-overlap',
+  'caption-band',
+  'headline-masthead',
+  'editorial-card',
+  'vertical-bento',
+  'dual-phone',
+  'tilted-card',
   'landscape-split',
   'landscape-hero',
 ]);
@@ -267,6 +266,71 @@ export interface PlatformConfig {
   outputDir: string;          // relative to output root
   defaultEnabled: boolean;
   fallbackSourceFrom?: Platform;
+}
+
+// ─── Readability gate ─────────────────────────────────────────────────────────
+// Layouts declare every text-bearing region they paint via TextZone entries.
+// The post-render contrast gate samples the composed image pixels under each
+// zone and checks WCAG 2.2 contrast against the declared text colour, plus a
+// minimum-font-size floor per role. Violations surface in manifest.json and
+// review.html.
+
+/**
+ * Logical role of a text region. Drives target contrast (headlines + accents
+ * are "large text" by WCAG; subheadlines / captions / badges are normal text)
+ * and the minimum-font-size floor.
+ */
+export type TextRole = 'headline' | 'subheadline' | 'caption' | 'badge' | 'label';
+
+/** Pixel-space bounding box on the FINAL composed image. */
+export interface ZoneBbox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export interface TextZone {
+  role: TextRole;
+  text: string;
+  bbox: ZoneBbox;
+  /** Text colour as authored (hex `#RRGGBB` or `rgba(...)`). */
+  color: string;
+  fontSize: number;
+  /** Treat as "large text" for WCAG contrast targets. */
+  isLargeText: boolean;
+}
+
+/** Every contrast violation found by the gate after rendering. */
+export interface ContrastViolation {
+  role: TextRole;
+  text: string;
+  measured: number;          // observed contrast ratio against rendered bg
+  target: number;            // required ratio (WCAG AA)
+  bbox: ZoneBbox;
+}
+
+/** Every font-size-floor violation. */
+export interface FontSizeViolation {
+  role: TextRole;
+  fontSize: number;
+  minimum: number;
+  bbox: ZoneBbox;
+}
+
+export interface GateResult {
+  contrast: ContrastViolation[];
+  fontSize: FontSizeViolation[];
+}
+
+/**
+ * New layout return contract. The gate audits every render, so layouts must
+ * declare the bboxes of any text they paint. A layout with no text (TV banner,
+ * wear-os watch face, etc.) returns `zones: []` and is exempt automatically.
+ */
+export interface LayoutResult {
+  buffer: Buffer;
+  zones: TextZone[];
 }
 
 // Resolved render input — what each layout function actually receives.

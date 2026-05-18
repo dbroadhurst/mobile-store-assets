@@ -2,7 +2,8 @@ import sharp from 'sharp';
 import fs from 'fs';
 import path from 'path';
 import { escapeXml, fitText, resizeBg, TEXT_SHADOW_DEFS } from '../helpers.js';
-import type { LayoutInput } from '../types.js';
+import { estimateTextBbox } from '../contrast-gate.js';
+import type { LayoutInput, LayoutResult, TextZone } from '../types.js';
 
 // ANDROID TV BANNER  (1280×720, 16:9)
 // Required for Android TV listings. Composed from app icon + name + tagline,
@@ -10,7 +11,7 @@ import type { LayoutInput } from '../types.js';
 //
 // The dispatcher routes android-tv-banner → here regardless of the spec's
 // `layout` value (TV banner is a fixed composition, not a layout choice).
-export async function tvBanner(input: LayoutInput): Promise<Buffer> {
+export async function tvBanner(input: LayoutInput): Promise<LayoutResult> {
   const { background, screenshot, theme, config, targetWidth: W, targetHeight: H, projectRoot } = input;
   const bg = await resizeBg(background, W, H);
 
@@ -63,5 +64,32 @@ export async function tvBanner(input: LayoutInput): Promise<Buffer> {
   if (iconLayer) composites.push(iconLayer);
   composites.push({ input: Buffer.from(overlay), top: 0, left: 0 });
 
-  return sharp(bg).composite(composites).png().toBuffer();
+  const buffer = await sharp(bg).composite(composites).png().toBuffer();
+
+  const zones: TextZone[] = [
+    {
+      role: 'headline',
+      text: appName,
+      bbox: estimateTextBbox({
+        x: textLeft, y: nameY, text: appName, fontSize: nameSz,
+        anchor: 'start', charRatio: 0.60,
+      }),
+      color: theme.headline_color,
+      fontSize: nameSz,
+      isLargeText: true,
+    },
+    ...(tagline ? [{
+      role: 'subheadline' as const,
+      text: tagline,
+      bbox: estimateTextBbox({
+        x: textLeft, y: tagY, text: tagline, fontSize: tagSz,
+        anchor: 'start', charRatio: 0.54,
+      }),
+      color: theme.subheadline_color,
+      fontSize: tagSz,
+      isLargeText: tagSz >= Math.floor(H * 0.04),
+    }] : []),
+  ];
+
+  return { buffer, zones };
 }

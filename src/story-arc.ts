@@ -14,12 +14,16 @@ import type { Layout, StorySlot, ScreenshotSpec, Orientation } from './types.js'
 // designed for tall canvases (text-on-top + phone-on-bottom) don't translate
 // to wide canvases. The renderer picks the right table based on the
 // screenshot's orientation field (or auto-detected aspect).
+//
+// Layout vocabulary, container styles, and slot-job mapping are documented
+// in skills/creative-design-principles/SKILL.md §10–11 and visualised in
+// design/layouts-*.html (one HTML file per device class × orientation).
 
 export const VALID_LAYOUTS_PORTRAIT: Record<StorySlot, Layout[]> = {
-  value: ['uppercase-top', 'aurora-hero', 'highlight-pill', 'caption-below'],
-  usage: ['caption-below', 'card-tilted', 'dual-phone-overlap', 'bento'],
-  trust: ['editorial-split', 'dual-phone-overlap', 'side-list', 'highlight-pill'],
-  cta:   ['text-hero'],
+  value: ['hero-type', 'headline-masthead'],
+  usage: ['caption-band', 'editorial-card', 'dual-phone'],
+  trust: ['feature-stack', 'vertical-bento', 'tilted-card'],
+  cta:   ['hero-type'],
 };
 
 export const VALID_LAYOUTS_LANDSCAPE: Record<StorySlot, Layout[]> = {
@@ -38,8 +42,8 @@ export function inferSlot(screenshots: ScreenshotSpec[], index: number): StorySl
   const ss = screenshots[index];
   if (ss.slot) return ss.slot;
 
-  // text-hero is the no-phone closer.
-  if (ss.layout === 'text-hero') return 'cta';
+  // hero-type is the no-phone closer (and the no-phone opener).
+  if (ss.layout === 'hero-type' || (ss.layout as string) === 'text-hero') return 'cta';
   if (index === screenshots.length - 1 && Object.keys(ss.sources ?? {}).length === 0) return 'cta';
 
   if (index === 0) return 'value';

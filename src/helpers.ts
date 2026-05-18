@@ -109,36 +109,51 @@ export function fitWrapped(
   preferred: number,
   charRatio: number,
   lineHeightRatio: number,
-  opts: { minSize?: number; maxLines?: number; targets?: number[] } = {},
+  opts: { minSize?: number; maxLines?: number; targets?: number[]; hardMaxLines?: number } = {},
 ): { lines: string[]; size: number } {
   const minSize  = opts.minSize  ?? Math.floor(preferred * 0.45);
   const maxLines = opts.maxLines ?? 3;
+  // Hard ceiling: how many lines we'll *escalate to* if the layout's preferred
+  // maxLines can't fit text at minSize. Honouring minSize matters more than
+  // honouring maxLines — a 4-line subhead is readable; a 33-px subhead is not.
+  const hardMaxLines = Math.max(maxLines, opts.hardMaxLines ?? 5);
   const targets  = opts.targets  ?? [14, 18, 22, 26, 30];
 
-  let best: { lines: string[]; size: number } | null = null;
-  let anyFit: { lines: string[]; size: number } | null = null;
-  for (const lc of [1, 2, 3].filter(l => l <= maxLines)) {
+  // Try candidate (line-count × wrap-target) combinations up to hardMaxLines.
+  // Pick the largest size that:
+  //   1. clears minSize, AND
+  //   2. uses the fewest lines among equal-size candidates (preserves
+  //      visual rhythm — don't wrap 1→3 lines just to gain 1 px).
+  let best: { lines: string[]; size: number; lc: number } | null = null;
+  let anyFit: { lines: string[]; size: number; lc: number } | null = null;
+  for (let lc = 1; lc <= hardMaxLines; lc++) {
     for (const tgt of targets) {
       const lines = wrapSmart(text, tgt, lc);
-      if (!lines || lines.length !== lc) continue;   // wrap didn't fit at this line count
+      if (!lines || lines.length !== lc) continue;
       const size = fitTextBlock(lines, maxW, maxH, preferred, charRatio, lineHeightRatio);
-      const candidate = { lines, size };
+      const candidate = { lines, size, lc };
       if (!anyFit || size > anyFit.size) anyFit = candidate;
       if (size < minSize) continue;
-      if (!best || size > best.size) best = candidate;
+      // Prefer larger size; tie-break on fewer lines so we don't gratuitously wrap.
+      if (!best || size > best.size || (size === best.size && lc < best.lc)) {
+        best = candidate;
+      }
     }
   }
-  if (best) return best;
-  if (anyFit) return anyFit;
-  // Last resort: wrap as wide as we need to fit in maxLines (no orphan guard,
-  // largest target). Guarantees no content is lost.
+  if (best) return { lines: best.lines, size: best.size };
+
+  // No candidate cleared minSize even at hardMaxLines. Honour the floor by
+  // returning a wrap at hardMaxLines with size pinned to minSize — accept
+  // potential vertical overflow rather than rendering unreadable text. The
+  // contrast gate will still flag any residual issue, and the layout's
+  // container clipping (overflow:hidden equivalent via SVG) will absorb it.
   let fallback: string[] | null = null;
   for (const tgt of [...targets].sort((a, b) => b - a).concat([60, 80, 120])) {
-    fallback = wrapSmart(text, tgt, maxLines);
-    if (fallback && fallback.length <= maxLines) break;
+    fallback = wrapSmart(text, tgt, hardMaxLines);
+    if (fallback && fallback.length <= hardMaxLines) break;
   }
   const lines = fallback ?? [text];
-  return { lines, size: fitTextBlock(lines, maxW, maxH, preferred, charRatio, lineHeightRatio) };
+  return { lines, size: Math.max(minSize, anyFit?.size ?? minSize) };
 }
 
 // Round corners via SVG mask. ensureAlpha avoids black corner fringing.

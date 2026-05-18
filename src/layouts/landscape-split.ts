@@ -1,13 +1,14 @@
 import sharp from 'sharp';
 import { escapeXml, fitText, makeDeviceFrame, resizeBg, screenshotAspect, stripBrackets, TEXT_SHADOW_DEFS } from '../helpers.js';
-import type { LayoutInput } from '../types.js';
+import { estimateTextBbox, unionBbox } from '../contrast-gate.js';
+import type { LayoutInput, LayoutResult, TextZone } from '../types.js';
 
 // LANDSCAPE-SPLIT
 // Horizontal split for wide canvases: headline + subhead in a top band,
 // phone fills the lower band with native aspect, centred. Avoids overlap on
 // landscape-native screenshots where the device frame would otherwise eat
 // the full width.
-export async function landscapeSplit(input: LayoutInput): Promise<Buffer> {
+export async function landscapeSplit(input: LayoutInput): Promise<LayoutResult> {
   const { background, screenshotPath, screenshot, theme, targetWidth: W, targetHeight: H } = input;
   const bg = await resizeBg(background, W, H);
   if (!screenshotPath) throw new Error('landscape-split requires a screenshot source');
@@ -69,13 +70,46 @@ export async function landscapeSplit(input: LayoutInput): Promise<Buffer> {
     ${subSvg}
   </svg>`;
 
-  return sharp(bg)
+  const buffer = await sharp(bg)
     .composite([
       { input: phoneBuf,             top: phoneTopFinal, left: phoneLeft },
       { input: Buffer.from(overlay), top: 0,             left: 0         },
     ])
     .png()
     .toBuffer();
+
+  const headlineBboxes = headlineLines.map((line, i) =>
+    estimateTextBbox({
+      x: padX, y: headlineY0 + (i + 1) * lineH, text: line,
+      fontSize: headlineSz, anchor: 'start', charRatio: 0.62,
+    }),
+  );
+  const subBboxes = subWrapped.map((line, i) =>
+    estimateTextBbox({
+      x: padX, y: subY0 + i * subLineH + subSz * 0.85, text: line,
+      fontSize: subSz, anchor: 'start', charRatio: 0.55,
+    }),
+  );
+  const zones: TextZone[] = [
+    {
+      role: 'headline',
+      text: headlineLines.join(' '),
+      bbox: unionBbox(headlineBboxes),
+      color: theme.headline_color,
+      fontSize: headlineSz,
+      isLargeText: true,
+    },
+    ...(subWrapped.length > 0 ? [{
+      role: 'subheadline' as const,
+      text: subWrapped.join(' '),
+      bbox: unionBbox(subBboxes),
+      color: theme.subheadline_color,
+      fontSize: subSz,
+      isLargeText: subSz >= Math.floor(H * 0.025),
+    }] : []),
+  ];
+
+  return { buffer, zones };
 }
 
 function longest(lines: string[]): string {

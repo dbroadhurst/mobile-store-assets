@@ -10,12 +10,14 @@ import type {
   StoreConfig,
   Platform,
   LayoutInput,
+  LayoutResult,
   ScreenshotSpec,
   ProviderId,
   SetSpec,
   Theme,
 } from './types.js';
 import { requiresScreenshot } from './types.js';
+import { validateZones } from './contrast-gate.js';
 import { PLATFORMS, FEATURE_GRAPHIC, DEFAULT_LOCALE } from './config.js';
 import {
   generateBackground,
@@ -26,22 +28,20 @@ import {
 } from './gemini.js';
 import { resizeBg, escapeXml, fitText, fitWrapped, screenshotAspect, makeDeviceFrame, stripBrackets, TEXT_SHADOW_DEFS } from './helpers.js';
 import { layoutForSet } from './story-arc.js';
-import { textHero } from './layouts/text-hero.js';
-import { captionBelow } from './layouts/caption-below.js';
-import { uppercaseTop } from './layouts/uppercase-top.js';
-import { logoTilted } from './layouts/logo-tilted.js';
-import { auroraHero } from './layouts/aurora-hero.js';
-import { bento } from './layouts/bento.js';
-import { editorialSplit } from './layouts/editorial-split.js';
-import { highlightPill } from './layouts/highlight-pill.js';
-import { sideList } from './layouts/side-list.js';
-import { cardTilted } from './layouts/card-tilted.js';
-import { dualPhoneOverlap } from './layouts/dual-phone.js';
 import { wearOs } from './layouts/wear-os.js';
 import { tvBanner } from './layouts/tv-banner.js';
 import { landscapeSplit } from './layouts/landscape-split.js';
 import { landscapeHero } from './layouts/landscape-hero.js';
 import { landscapeTextOnly } from './layouts/landscape-text-only.js';
+// Container-first portrait layouts. See SKILL.md §10–11 and design/layouts-*.html.
+import { heroType } from './layouts/hero-type.js';
+import { captionBand } from './layouts/caption-band.js';
+import { headlineMasthead } from './layouts/headline-masthead.js';
+import { editorialCard } from './layouts/editorial-card.js';
+import { verticalBento } from './layouts/vertical-bento.js';
+import { featureStack } from './layouts/feature-stack.js';
+import { dualPhone } from './layouts/dual-phone.js';
+import { tiltedCard } from './layouts/tilted-card.js';
 import { BackgroundCache } from './cache.js';
 import { writeStoreListings } from './listing.js';
 import { extractTheme } from './colors.js';
@@ -208,32 +208,91 @@ function manifestPlatformLabel(p: Platform): string {
 
 // ─── Layout dispatcher ────────────────────────────────────────────────────────
 
-async function renderLayout(input: LayoutInput, platform: Platform): Promise<Buffer> {
+// Legacy layout-name alias map. Older spec.yaml files reference superseded names
+// (text-hero, caption-below, etc.); we transparently route them to their
+// container-first replacements so existing projects pick up the new visuals
+// without spec-yaml edits. Mapping picks the closest semantic match per the
+// design atlas in SKILL.md §11.
+const LEGACY_LAYOUT_ALIASES: Record<string, import('./types.js').Layout> = {
+  'text-hero':          'hero-type',
+  'caption-below':      'caption-band',
+  'uppercase-top':      'headline-masthead',
+  'logo-tilted':        'hero-type',
+  'aurora-hero':        'hero-type',
+  'bento':              'vertical-bento',
+  'editorial-split':    'editorial-card',
+  'highlight-pill':     'hero-type',
+  'side-list':          'feature-stack',
+  'card-tilted':        'tilted-card',
+  'dual-phone-overlap': 'dual-phone',
+};
+
+function canonicalLayout(name: string): import('./types.js').Layout {
+  return (LEGACY_LAYOUT_ALIASES[name] ?? name) as import('./types.js').Layout;
+}
+
+async function renderLayout(input: LayoutInput, platform: Platform): Promise<LayoutResult> {
   // Special-purpose surfaces ignore the spec's `layout` field — Wear OS and
   // the TV banner have fixed compositions because phone-screenshot layouts
   // don't make sense at 1:1 watch size or 16:9 banner.
-  if (platform === 'wear-os')           return wearOs(input);
-  if (platform === 'android-tv-banner') return tvBanner(input);
+  if (platform === 'wear-os')           return normalize(await wearOs(input));
+  if (platform === 'android-tv-banner') return normalize(await tvBanner(input));
 
-  switch (input.screenshot.layout) {
+  switch (canonicalLayout(input.screenshot.layout)) {
     // Portrait
-    case 'text-hero':           return textHero(input);
-    case 'caption-below':       return captionBelow(input);
-    case 'uppercase-top':       return uppercaseTop(input);
-    case 'logo-tilted':         return logoTilted(input);
-    case 'aurora-hero':         return auroraHero(input);
-    case 'bento':               return bento(input);
-    case 'editorial-split':     return editorialSplit(input);
-    case 'highlight-pill':      return highlightPill(input);
-    case 'side-list':           return sideList(input);
-    case 'card-tilted':         return cardTilted(input);
-    case 'dual-phone-overlap':  return dualPhoneOverlap(input);
+    case 'hero-type':           return normalize(await heroType(input));
+    case 'caption-band':        return normalize(await captionBand(input));
+    case 'headline-masthead':   return normalize(await headlineMasthead(input));
+    case 'editorial-card':      return normalize(await editorialCard(input));
+    case 'vertical-bento':      return normalize(await verticalBento(input));
+    case 'feature-stack':       return normalize(await featureStack(input));
+    case 'dual-phone':          return normalize(await dualPhone(input));
+    case 'tilted-card':         return normalize(await tiltedCard(input));
     // Landscape
-    case 'landscape-split':     return landscapeSplit(input);
-    case 'landscape-hero':      return landscapeHero(input);
-    case 'landscape-text-only': return landscapeTextOnly(input);
-    default:                    return textHero(input);
+    case 'landscape-split':     return normalize(await landscapeSplit(input));
+    case 'landscape-hero':      return normalize(await landscapeHero(input));
+    case 'landscape-text-only': return normalize(await landscapeTextOnly(input));
+    default:                    return normalize(await heroType(input));
   }
+}
+
+// ─── Auto-remediation retry loop ────────────────────────────────
+// After the first render, the gate samples actual pixels under each declared
+// zone. On any failure, we bump the contrast target one notch and re-render
+// up to MAX_RETRIES times. Layouts that declare no zones (`zones: []`) so the
+// gate trivially passes and the retry loop never engages for them.
+const MAX_GATE_RETRIES = 2;
+
+async function renderLayoutWithRetry(
+  input: LayoutInput,
+  platform: Platform,
+  canvasWidth: number,
+  canvasHeight: number,
+): Promise<{ result: LayoutResult; gate: import('./types.js').GateResult; attempts: number }> {
+  let lastResult: LayoutResult = await renderLayout(input, platform);
+  let lastGate = lastResult.zones.length > 0
+    ? await validateZones(lastResult.buffer, lastResult.zones, canvasWidth, canvasHeight)
+    : { contrast: [], fontSize: [] };
+  if (lastResult.zones.length === 0) {
+    return { result: lastResult, gate: lastGate, attempts: 1 };
+  }
+  for (let attempt = 1; attempt <= MAX_GATE_RETRIES; attempt++) {
+    if (lastGate.contrast.length === 0) break;
+    // Bump the contrast boost via env var that containers.ts reads — simpler
+    // than threading it through the input. Each retry adds 1.0 to the target.
+    process.env.CONTRAST_BOOST = String(attempt * 1.0);
+    lastResult = await renderLayout(input, platform);
+    lastGate = await validateZones(lastResult.buffer, lastResult.zones, canvasWidth, canvasHeight);
+    delete process.env.CONTRAST_BOOST;
+  }
+  return { result: lastResult, gate: lastGate, attempts: 1 + MAX_GATE_RETRIES };
+}
+
+// Adapter that accepts either the legacy Buffer return or the new LayoutResult.
+// Layouts migrate to LayoutResult one at a time; legacy ones are gate-exempt
+// (zones: []) until they're updated.
+function normalize(r: Buffer | LayoutResult): LayoutResult {
+  return Buffer.isBuffer(r) ? { buffer: r, zones: [] } : r;
 }
 
 // ─── Source resolution ────────────────────────────────────────────────────────
@@ -1098,14 +1157,14 @@ async function main() {
             console.log(`  ⚠️  ${platform}: no source screenshot — skipping`);
             continue;
           }
-          // For dual-phone-overlap, prefer an explicit secondary source. If
-          // none provided, auto-pair with a sibling screenshot's source so the
-          // two phones show different content (the user flagged that two
-          // copies of the same shot doesn't read as variety).
+          // For dual-phone, prefer an explicit secondary source. If none
+          // provided, auto-pair with a sibling screenshot's source so the
+          // two phones show different content (two copies of the same shot
+          // doesn't read as variety).
           let screenshotPathSecondary: string | null = ss.sources_secondary?.[platform]
             ? path.join(ssDir, platform, ss.sources_secondary[platform]!)
             : null;
-          if (!screenshotPathSecondary && resolved.layout === 'dual-phone-overlap') {
+          if (!screenshotPathSecondary && (resolved.layout === 'dual-phone' || (resolved.layout as string) === 'dual-phone-overlap')) {
             const siblings = spec.screenshots.filter(s => s.id !== ss.id && s.sources?.[platform]);
             const sibling = siblings[0];
             if (sibling) {
@@ -1151,7 +1210,25 @@ async function main() {
               projectRoot: args.projectRoot,
             };
 
-            const rendered = await renderLayout(layoutInput, platform);
+            // Readability gate with auto-remediation: render → sample
+            // pixels under each declared zone → on contrast failure bump the
+            // target ratio and re-render (up to 2 retries). Layouts
+            // declare no zones and skip the retry loop entirely.
+            const { result: rendered, gate: gateResult, attempts } =
+              await renderLayoutWithRetry(layoutInput, platform, W, H);
+            const gateBadCount = gateResult.contrast.length + gateResult.fontSize.length;
+            if (attempts > 1) {
+              console.log(`  ↻  ${ss.id}/${platform}: retried ${attempts - 1}× for readability`);
+            }
+            if (gateBadCount > 0) {
+              console.log(`  ⚠️  ${gateBadCount} readability issue${gateBadCount > 1 ? 's' : ''} on ${ss.id}/${platform} (after ${attempts} attempt${attempts > 1 ? 's' : ''})`);
+              for (const v of gateResult.contrast) {
+                console.log(`     · contrast ${v.measured}:1 < ${v.target}:1 (${v.role}: "${v.text.slice(0, 60)}")`);
+              }
+              for (const v of gateResult.fontSize) {
+                console.log(`     · font ${v.fontSize}px < ${v.minimum}px floor (${v.role})`);
+              }
+            }
 
             const segments = [
               locale === DEFAULT_LOCALE ? '' : locale,
@@ -1165,7 +1242,7 @@ async function main() {
             // with the theme bg; removeAlpha() then drops the channel byte
             // so the encoded PNG is genuinely 24-bit (some tools still flag
             // 32-bit-with-all-opaque-alpha PNGs as "has alpha").
-            await sharp(rendered)
+            await sharp(rendered.buffer)
               .flatten({ background: set.theme.bg_from })
               .removeAlpha()
               .png()
@@ -1194,6 +1271,7 @@ async function main() {
               width: W,
               height: H,
               orientation,
+              gates: gateResult,
             });
           }
         }
