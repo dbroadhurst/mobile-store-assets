@@ -294,44 +294,7 @@ export async function validateZones(
   return result;
 }
 
-// ─── Zone-building helpers (used by layouts) ─────────────────────────────────
-
-/**
- * Estimate the bbox of an SVG <text> element placed at (x, y) with the given
- * font size + anchor. Used by layouts to declare zones in the same units they
- * pass to SVG. Conservative: pads height to include descenders + capline.
- */
-export function estimateTextBbox(opts: {
-  x: number;
-  y: number;       // baseline y (the SVG text positioning convention)
-  text: string;
-  fontSize: number;
-  anchor: 'start' | 'middle' | 'end';
-  charRatio?: number;
-}): ZoneBbox {
-  const cr = opts.charRatio ?? 0.58;
-  const w = Math.max(1, Math.ceil(opts.text.length * opts.fontSize * cr));
-  const h = Math.max(1, Math.ceil(opts.fontSize * 1.15));
-  const top = opts.y - Math.ceil(opts.fontSize * 0.85);
-  let left = opts.x;
-  if (opts.anchor === 'middle') left = opts.x - w / 2;
-  else if (opts.anchor === 'end') left = opts.x - w;
-  return { x: left, y: top, w, h };
-}
-
-/**
- * Bounding box that contains a list of single-line bboxes. Use when a
- * headline wraps to multiple lines and you want a single zone covering the
- * whole block (instead of one zone per line).
- */
-export function unionBbox(boxes: ZoneBbox[]): ZoneBbox {
-  if (boxes.length === 0) return { x: 0, y: 0, w: 0, h: 0 };
-  const x0 = Math.min(...boxes.map(b => b.x));
-  const y0 = Math.min(...boxes.map(b => b.y));
-  const x1 = Math.max(...boxes.map(b => b.x + b.w));
-  const y1 = Math.max(...boxes.map(b => b.y + b.h));
-  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
-}
+// ─── Color parsing helper ────────────────────────────────────────────────────
 
 function stripRgbaPrefix(c: string): string {
   // If a layout passed "rgba(255,255,255,0.88)" we approximate by stripping

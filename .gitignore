@@ -1,3 +1,9 @@
 node_modules/
 dist/
 *.js.map
+
+# Atlas build intermediates (the committed atlas lives in design/preview/)
+design/.tmp/
+
+# macOS
+.DS_Store

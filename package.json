@@ -43,7 +43,9 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsc --noEmit",
+    "build": "npm run build:css && tsc --noEmit",
+    "build:css": "tailwindcss -i ./templates/tailwind-input.css -o ./templates/tailwind.css --minify",
+    "watch:css": "tailwindcss -i ./templates/tailwind-input.css -o ./templates/tailwind.css --watch",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -51,11 +53,18 @@
     "dotenv": "^16.4.5",
     "js-yaml": "^4.1.0",
     "openai": "^6.37.0",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
     "sharp": "^0.33.5"
   },
   "devDependencies": {
+    "@tailwindcss/cli": "^4.3.0",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.0.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "playwright": "^1.60.0",
+    "tailwindcss": "^4.3.0",
     "tsx": "^4.19.1",
     "typescript": "^5.5.4"
   }

@@ -1,0 +1,46 @@
+@import "tailwindcss";
+
+/* Tell Tailwind which files to scan for class usage. v4 syntax. */
+@source "../src/layouts/web/**/*.tsx";
+@source "../src/render/**/*.tsx";
+
+/* Tailwind v4 theme tokens — these emit `text-headline`, `leading-headline`,
+   etc. utility classes AND CSS custom properties on `:root`. The custom
+   properties ARE referenced from JSX `style={{}}` props (inline styles), but
+   v4's scanner only reads class usage, so duplicate them in plain :root
+   below to guarantee emission. */
+@theme {
+  --default-font-family: "Inter", -apple-system, "SF Pro Display", system-ui, sans-serif;
+}
+
+/* ─── Store-asset design tokens ──────────────────────────────────────────────
+   Plain CSS so they always emit, even when referenced only via inline
+   `var(...)` in JSX. Sized in container-query units against the .canvas-root
+   container, so one layout scales cleanly from iPhone to iPad.
+
+   Floors derived from WCAG-equivalent body-text minimums scaled to canvas
+   height; ceilings tuned so headlines fit in 2-3 lines at narrowest aspect
+   ratio (5:8 android-tablet). */
+:root {
+  --text-headline:    clamp(56px, 4.5cqh, 120px);
+  --text-subheadline: clamp(28px, 2.0cqh, 56px);
+  --text-caption:     clamp(20px, 1.6cqh, 44px);
+  --text-badge:       clamp(18px, 1.3cqh, 36px);
+
+  --leading-headline:    1.08;
+  --leading-subheadline: 1.35;
+
+  --tracking-headline: -0.02em;
+}
+
+/* The canvas container — every layout's outermost element gets this class.
+   `container-type: size` is what makes `cqh`/`cqw` units resolve to canvas
+   dimensions rather than viewport. Declared as a plain class (not a
+   Tailwind utility) so v4's source-scan doesn't tree-shake it. */
+.canvas-root {
+  container-type: size;
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+}

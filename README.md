@@ -2,7 +2,7 @@
 
 A Claude Code plugin that generates **every iOS and Android marketing image** an app needs — App Store + Google Play screenshots, feature graphics, Wear OS, TV banner — from your raw app screenshots, and authors ASO copy as a **4-set A/B test matrix** ready for Apple PPO and Google Play store-listing experiments.
 
-**Backgrounds default to AI** (Imagen 4 or `gpt-image-1`) when an `OPENAI_API_KEY` or `GOOGLE_AI_API_KEY` is present in `marketing/.env.local` — the prompt is steered by your `app.category`, `aso.positioning`, `aso.primary_keywords`, and `spec.hint` so every set carries on-brand subject motifs. **Fallback is CSS / SVG** composition with Sharp: deterministic, instant, free — used automatically when no key is set, or via `--css-bg`. Eight unique backgrounds power the entire matrix (4 themes × 2 orientations).
+**Backgrounds default to AI** (Imagen 4 or `gpt-image-1`) when an `OPENAI_API_KEY` or `GOOGLE_AI_API_KEY` is present in `marketing/.env.local` (or in `~/.config/mobile-store-assets/.env`, shared by all your projects) — the prompt is steered by your `app.category`, `aso.positioning`, `aso.primary_keywords`, and `spec.hint` so every set carries on-brand subject motifs. **Fallback is CSS / SVG** composition with Sharp: deterministic, instant, free — used automatically when no key is set, or via `--css-bg`. Eight unique backgrounds power the entire matrix (4 themes × 2 orientations).
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Status: stable](https://img.shields.io/badge/status-stable-success)
@@ -161,7 +161,7 @@ See `aso-toolkit` §2 and `store-spec` for the verification table.
 
 Without this plugin, generating 80 store images with AI = ~80 API calls.
 
-With the plugin's bucket cache, **the entire matrix uses 8 unique backgrounds** (4 themes × 2 orientations — portrait + landscape). Each platform canvas pulls from the right bucket and `sharp` does cover+centre cropping. Exactly 8 calls, regardless of how many sets × screenshots × platforms you render.
+With the plugin's bucket cache, **the entire matrix uses 8 unique backgrounds** (4 themes × 2 orientations — portrait + landscape). Each platform canvas pulls from the right bucket and CSS `background-size: cover` does the centre cropping inside the JSX layout. Exactly 8 calls, regardless of how many sets × screenshots × platforms you render.
 
 A typical 4-set × 5-screenshot × 4-platform run on `gpt-image-1`:
 - Without bucketing: ~80 calls × $0.04 = **$3.20**
@@ -197,10 +197,19 @@ mobile-store-assets/
 │   ├── aso-toolkit/
 │   ├── ios-store-requirements/
 │   └── android-store-requirements/
-├── src/                          ← TypeScript renderer (sharp-based)
-│   ├── index.ts                  ← CLI entry
-│   ├── layouts/                  ← 11 layout modules
-│   ├── backgrounds.ts            ← 5 CSS/SVG bg styles
+├── src/                          ← TypeScript renderer (Playwright + JSX + Tailwind)
+│   ├── index.ts                  ← CLI entry + dispatcher
+│   ├── render/                   ← Playwright headless-Chromium harness
+│   │   ├── browser.ts            ← singleton browser instance
+│   │   ├── html-shell.tsx        ← document shell (inlines Tailwind + fonts)
+│   │   └── capture.ts            ← JSX → screenshot + DOM zone harvesting
+│   ├── layouts/                  ← 14 JSX layout templates (one per surface)
+│   │   ├── shared.tsx            ← data-URI + bracket-highlight helpers
+│   │   ├── caption-band.tsx, hero-type.tsx, headline-masthead.tsx, …
+│   │   └── feature-graphic.tsx   ← 3-variant Google Play banner
+│   ├── helpers.ts                ← screenshotAspect + stripBrackets
+│   ├── contrast-gate.ts          ← WCAG pixel-sampling readability audit
+│   ├── backgrounds.ts            ← 5 CSS/SVG bg styles (fed into layouts as data URIs)
 │   ├── themes.ts                 ← palette derivation + adaptive text colour
 │   ├── colors.ts                 ← WCAG luminance + contrast helpers
 │   ├── matrix.ts                 ← ABCD planner
@@ -210,12 +219,26 @@ mobile-store-assets/
 │   ├── gemini.ts                 ← AI provider adapters
 │   ├── cache.ts                  ← disk cache for AI backgrounds
 │   └── retry.ts                  ← exponential backoff
-└── templates/
-    ├── .store-config.yaml
-    ├── .env.local.example
-    ├── spec-starter.yaml
-    └── review.html
+├── templates/
+│   ├── tailwind-input.css        ← Tailwind v4 source + design tokens
+│   ├── tailwind.css              ← compiled bundle (built by `npm run build:css`)
+│   ├── .store-config.yaml
+│   ├── .env.local.example
+│   ├── spec-starter.yaml
+│   └── review.html
+└── design/
+    ├── build-preview.ts          ← regenerate the WYSIWYG layout atlas
+    ├── index.html                ← browsable preview of every layout
+    └── preview/*.png             ← committed renders, one per layout
 ```
+
+### Dependencies
+
+- **`playwright`** + bundled Chromium — the rendering engine. Installed on first run via `npx playwright install chromium`.
+- **`react` / `react-dom`** — server-only via `renderToStaticMarkup`. No client runtime.
+- **`tailwindcss` v4** — compiled to `templates/tailwind.css` at build time.
+- **`sharp`** — synthetic background SVGs, image dimension reads, contrast-gate pixel sampling.
+- **`@google/genai`** + **`openai`** — AI background providers.
 
 ---
 
@@ -225,8 +248,14 @@ mobile-store-assets/
 git clone https://github.com/dbroadhurst/mobile-store-assets.git
 cd mobile-store-assets
 npm install
-npx tsc --noEmit                 # type-check
+npx playwright install chromium   # one-time, ~90MB
+npm run build:css                 # compile Tailwind bundle
+npm run typecheck                 # type-check
 ./bin/store-assets-gen --version 1.0.0 --root /path/to/test-project
+
+# Regenerate the design atlas after editing any layout:
+npx tsx design/build-preview.ts
+open design/index.html
 ```
 
 Pull requests welcome. Open an issue first for anything substantial.

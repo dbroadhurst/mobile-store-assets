@@ -413,10 +413,12 @@ Any failed gate is a build-time warning, not a silent override.
 | Saturation / hue tweaks | `src/colors.ts` `saturate`, `shiftHue`, `lighten` | Use sparingly per §2.3 |
 | Layout / slot story arc | `src/story-arc.ts` | Slot → valid layout family |
 | Matrix / palette per set | `src/matrix.ts`, `src/themes.ts` | Eight backgrounds across ABCD |
-| Text fit / wrap | layout modules + `text-fit` | Hard floor on minimum font size |
-| Container-first composition | `src/containers.ts` | `planContainers` + `paintContainers` |
-| Auto-remediation retry loop | `src/index.ts:renderLayoutWithRetry` | Up to 2 retries with escalating contrast targets |
-| Legacy-name aliases | `src/index.ts:LEGACY_LAYOUT_ALIASES` | Older spec.yaml names auto-route to current layouts |
+| Text fit / wrap | CSS — `text-wrap: balance` + `clamp()` font sizing in each JSX layout | No manual char-budget math; browser handles wrapping |
+| Glassy text panels | CSS `backdrop-filter: blur() saturate()` in each JSX layout | Replaces the prior pixel-sampled solve-alpha pass |
+| Auto-remediation retry loop | `src/index.ts:renderLayoutWithRetry` | Bumps `--scrim-boost` CSS var 0.15 → 0.30 over 2 retries when WCAG fails |
+| Contrast gate | `src/contrast-gate.ts:validateZones` | Samples rendered pixels under each `[data-zone]` bbox, compares to declared text colour |
+| Font-size floor | `src/contrast-gate.ts:minFontPxFor` | Per-role minimums scaled to canvas's shorter side |
+| Layout dispatcher | `src/index.ts:renderLayout` | Maps `screenshot.layout` → JSX template; legacy spec names auto-route via `LEGACY_LAYOUT_ALIASES` |
 
 When this skill conflicts with what the code currently does, fix the
 code — these rules carry the conversion data; the renderer is the
@@ -424,82 +426,74 @@ mechanism.
 
 ---
 
-## 10. Container-first composition
+## 10. Readability strategy
 
-The readability strategy: **every text run is painted on a deterministic
-container whose alpha is solved for the contrast target against the actual
-sampled background pixels.** Backgrounds — especially AI-generated ones —
-cannot be trusted to honour a text-safe zone on their own.
+The principle: **headline + subhead text needs predictable contrast against
+the background**, regardless of whether the background is an AI image, a
+gradient, or a phone screenshot bleeding behind a panel. Backgrounds —
+especially AI-generated ones — cannot be trusted to honour a text-safe
+zone on their own.
 
-### 10.1 The three container styles
+### 10.1 The three text-container styles
 
-| Style | Use | Typical alpha | Visual |
-|-------|-----|---------------|--------|
-| `solid-panel` | Hero headlines, value slot, masthead | 0.74 – 0.84 | Rounded rect with soft drop shadow |
-| `soft-band` | Captions, banners, full-width strips | 0.45 – 0.60 | Full-width band, feathered top edge |
-| `chip` | Badges, feature claims, eyebrow tags | 0.92 – 0.98 (near-opaque) | Pill shape, brand or accent fill |
+| Style | Use | Default opacity | CSS pattern |
+|-------|-----|-----------------|-------------|
+| Glassy panel | Hero headlines, value slot, masthead | 0.55 – 0.78 | `rgba(10,15,31,X)` + `backdrop-filter: blur(20px) saturate(160%)` |
+| Soft band | Captions, banners, full-width strips | 0.30 → 0.50 (gradient) | Linear-gradient with feathered top edge + backdrop-filter |
+| Chip | Badges, feature claims, eyebrow tags | Near-opaque | Solid pill, brand or accent fill |
 
-Pick once per layout based on visual hierarchy; alpha is recomputed at
-render time so the same style works across any sampled bg.
+The blur does most of the contrast work — it smears whatever's behind the
+panel into a uniform mid-tone, so the same opacity setting reads cleanly
+over dark gradients, light phone screenshots, and busy AI backgrounds.
 
-### 10.2 The merge rule
+### 10.2 Auto-remediation loop
 
-Two adjacent text zones whose padded bboxes **overlap** or sit within
-`0.6 × line-height` of each other are merged into **one container**.
-A headline directly above a subhead becomes a single panel, not two
-stacked rectangles that read as a UI bug.
+Every layout's `[data-zone]` text elements are audited after render: the
+gate samples rendered pixels under each zone and compares to the declared
+text colour. On WCAG failure, `renderLayoutWithRetry` bumps the
+`--scrim-boost` CSS variable (0.15 → 0.30 over 2 retries) and re-renders.
+Layout panels add this directly to their `rgba(…)` alpha, so each retry
+produces a darker panel without regenerating any layout code.
 
-### 10.3 Auto-remediation loop
+### 10.3 Safe-area enforcement (CSS-native)
 
-After the first render, the gate samples actual pixels under every
-declared zone. Any failure raises that container's target ratio one
-step (e.g. 4.5 → 5.5) and re-paints. Up to **2 retries** before the
-CLI exits non-zero. This guarantees AA by construction — no manual
-tuning of scrim strength per asset.
+Layouts use `text-wrap: balance` and `clamp(min, fluid, max)` font sizes
+in container-query units (`cqh`/`cqw`). The browser handles wrapping and
+line balancing; there's no manual character-budget table to maintain.
+The font-size floor in `contrast-gate.ts:minFontPxFor` enforces a minimum
+that scales with the canvas's shorter side, so very long copy on a small
+canvas can't shrink past the WCAG-derived threshold.
 
-### 10.4 Safe-area enforcement
+### 10.4 Reference
 
-Every text run is fit-tested against
-`container.width − 2 × padding`. Lines that don't fit at the declared
-font size are first shrunk (down to the floor in §3.1) and then
-wrapped. Production output never overruns its container.
+Open `design/index.html` in a browser for the WYSIWYG layout atlas —
+every shipping layout rendered at a representative canvas size with
+stock content. Regenerate after layout edits with:
 
-### 10.5 Character budgets per container width
+```bash
+npx tsx design/build-preview.ts
+```
 
-Lookup table — use this to pre-trim copy before fit-test (saves a retry
-pass). Char widths assume Arial at the noted weight; bold/condensed adds
-~15 %. **Always test for the longest line; wrap if a single token can't fit.**
-
-| Container width (px) | Font size / weight | Approx px/char | Max chars/line |
-|----------------------|---------------------|----------------|----------------|
-| 100 (small stat tile)  | 13 regular | 6.5 | **~14** |
-| 100 (small stat tile)  | 44 weight-900 (stat) | 26 | **~3–4** (e.g. `100%`) |
-| 100 (small stat tile)  | 64 weight-900 (stat) | 32 | **~2** (e.g. `3s`, `4`) |
-| 192 (phone feature row) | 12 regular | 6.5 | **~28** |
-| 200 (phone editorial body) | 12 regular | 6.5 | **~30** |
-| 280 (phone caption band) | 26 weight-800 (headline) | 14 | **~19** |
-| 360 (tablet panel headline) | 34 weight-900 | 17 | **~20** |
-| 400 (tablet feature row) | 13 regular | 7 | **~55** |
-
-When a stat tile holds a multi-character number (e.g. `100%`, `4.9★`),
-**drop the stat font by ~20 pt** from the 1–2-char default (64 → 44).
-That's the TL-04 lesson: `100%` at font 64 = 128 px and overflows a 100 px
-safe area; at font 44 it fits with margin.
-
-### 10.6 Reference
-
-See `design/layouts-*.html` for the **32 layouts** (8 per device class).
-For routine decisions (which layout for which slot, container style for
-which zone) — **consult §11 below, not the HTML**. The HTML is for
-visual reference only.
+For routine spec-authoring decisions (which layout for which slot, what
+data each layout consumes) — consult §11 below.
 
 ---
 
-## 11. Layout atlas — the 32-layout vocabulary
+## 11. Layout atlas — the canonical 13-layout vocabulary
 
-This is the canonical reference. **Don't load the design HTML for routine
-decisions** — every layout's slot job, container plan, and composition
-intent is captured here.
+This is the canonical reference. **Don't open `design/index.html` for
+routine decisions** — every layout's slot job and composition intent is
+captured here. The atlas is for visual QA after edits, not for spec
+authoring.
+
+### 11.0 Files at a glance
+
+| File | Role |
+|------|------|
+| `src/layouts/<name>.tsx` | The shipping layout — JSX template, Tailwind tokens, container-query units |
+| `src/layouts/shared.tsx` | Data-URI helpers + bracket-highlight + `cssAspectRatio` |
+| `design/index.html` | Browsable atlas of every layout at a representative canvas size |
+| `design/build-preview.ts` | Regenerates the atlas after layout edits |
 
 ### 11.1 The fundamental rule
 
@@ -525,79 +519,73 @@ file but the *intent* is shared across all four.
 
 | # | Canonical intent | Job | Container plan |
 |---|------------------|-----|----------------|
-| 1 | **Hero Type** — icon + benefit headline + chips, no device | Value / CTA | merged `solid-panel` + chips |
-| 2 | **Caption** — device hero + caption band (top or bottom) | Flow | `soft-band` + merged title |
-| 3 | **Masthead** — solid headline panel + eyebrow chip + device | Value alt / Trust | `solid-panel` + `chip` eyebrow |
-| 4 | **Editorial / Multi-pane** — device + magazine-style text composition | Flow / Feature | `solid-panel` panel + accent rule |
-| 5 | **Bento** — grid of cards (headline strip + device + stat tiles) | Trust / Feature | multiple `solid-panel` tiles |
-| 6 | **Feature Stack / Side List** — numbered rows (with or without device) | Trust | 4 × `solid-panel` rows + footer `chip` |
-| 7 | **Dual Device** — two devices (light + dark, or A/B), tilted | Feature | `solid-panel` top + device frames |
-| 8 | **Tilted Card** — device in floating tilted card | Feature (premium) | tilted card + `solid-panel` text |
+| 1 | **`hero-type`** — icon + benefit headline + chips, no device | Value / CTA |
+| 2 | **`caption-band`** — device hero + soft-band caption at the bottom | Flow |
+| 3 | **`headline-masthead`** — headline panel + eyebrow chip top, device fills the bottom | Value alt / Trust |
+| 4 | **`editorial-card`** — tilted device clipping top + bottom-left panel + accent rule | Flow / Feature |
+| 5 | **`vertical-bento`** — headline strip + device tile + 2 stat tiles | Trust / Feature |
+| 6 | **`feature-stack`** — icon + headline + 4 numbered feature rows, no device | Trust |
+| 7 | **`dual-phone`** — two devices tilted toward each other + headline panel | Feature |
+| 8 | **`tilted-card`** — device inside a floating tilted card + bottom panel | Feature (premium) |
 
-### 11.3 Cross-device atlas
+Landscape-native canvases use one of three landscape layouts instead:
+- `landscape-split` — top text band + bottom device band
+- `landscape-hero` — centred uppercase headline + large centred device
+- `landscape-text-only` — icon left + headline/subhead right, no device
 
-The same 8-position vocabulary, instantiated per device class. Use this
-to pick a layout without loading the HTML.
+Two special surfaces ignore the spec's layout name entirely and compose
+themselves from `app.name` / `app.icon` / first headline:
+- `wear-os` — 384×384 watch face, icon + first headline word
+- `tv-banner` — 1280×720 Android TV banner, icon + app name + tagline
 
-| # | Phone portrait | Phone landscape | Tablet portrait | Tablet landscape |
-|---|----------------|-----------------|-----------------|------------------|
-| 1 | **#1 Hero Type** | LL-05 Text Hero · LL-01 Hero | TP-01 Hero Type | TL-05 Text Hero · TL-01 Hero Side |
-| 2 | **#2 Caption Band** | LL-02 Caption | TP-02 Caption Band | TL-02 Caption Top |
-| 3 | **#3 Headline Masthead** | (uses LL-01 instead) | TP-06 Headline Masthead | TL-06 Headline Masthead |
-| 4 | **#4 Editorial Card** | LL-03 Triple Phone | TP-03 Editorial Split | TL-03 Multi-pane |
-| 5 | **#5 Vertical Bento** | LL-04 Stat Strip | TP-04 Bento | TL-08 Bento Horizontal · TL-04 Stat Strip |
-| 6 | **#6 Feature Stack** | LL-08 Side List | TP-05 Feature Stack | (use TL-03 multi-pane) |
-| 7 | **#7 Dual Phone** | LL-06 Dual Phone | TP-07 Dual Tablet | TL-07 Dual Tablet |
-| 8 | **#8 Tilted Card** | LL-07 Tilted Card | TP-08 Tilted Card | (use TL-01 instead) |
+The Google Play **feature graphic** (1024×500) rotates through 3
+variants (`banner-bottom`, `hero-right`, `cluster-left`) by `setIndex % 3`.
 
-Notes:
-- Phone landscape skips Masthead (LL-01 covers Value); landscape canvas's wide aspect makes a separate masthead variant redundant.
-- Tablet landscape skips Feature Stack and Tilted Card; Multi-pane (TL-03) absorbs Feature Stack's role, and Hero Side (TL-01) covers the brand-forward feel.
+### 11.3 Canvas dimensions (production)
 
-### 11.4 Canvas dimensions (production)
+| Surface | Canvas |
+|---------|--------|
+| iPhone 6.9" portrait | 1320 × 2868 |
+| iPhone 6.7" portrait (legacy) | 1290 × 2796 |
+| iPad Pro 13" portrait | 2064 × 2752 |
+| Android phone portrait | 1440 × 2880 |
+| Android tablet portrait | 1600 × 2560 |
+| Wear OS | 384 × 384 |
+| Android TV banner | 1280 × 720 |
+| Google Play feature graphic | 1024 × 500 |
 
-| Class | Source canvas | Mockup viewBox |
-|-------|---------------|----------------|
-| Phone portrait | 1290 × 2796 | 320 × 640 |
-| Phone landscape | 2796 × 1290 | 640 × 320 |
-| Tablet portrait | 2048 × 2732 | 480 × 640 |
-| Tablet landscape | 2732 × 2048 | 640 × 480 |
+Landscape variants swap W↔H. Per-screenshot orientation is auto-detected
+from the source image's natural aspect (h < w → landscape) unless the
+spec sets `orientation:` explicitly.
 
-### 11.5 Story arc, sequenced
+### 11.4 Story arc, sequenced
 
-Recommended 10-slot sequence per device class. iOS shows the first 3
-inline in search; treat slots 1–3 as the conversion-critical sentence
-(**Value → Flow → Trust**). Slots 4–8 carry feature depth; slot 10 closes
-with a CTA. Landscape sets cap at 3 slots per iOS rules.
+Recommended 10-slot sequence. iOS shows the first 3 inline in search;
+treat slots 1–3 as the conversion-critical sentence (**Value → Flow →
+Trust**). Slots 4–8 carry feature depth; slot 10 closes with a CTA.
+Landscape sets cap at 3 slots per iOS rules.
 
-**Phone portrait (10 slots):** Hero Type → Caption Band → Feature Stack →
-Editorial Card → Vertical Bento → Dual Phone → Tilted Card → Caption Band →
-Headline Masthead → Hero Type (CTA).
+**Portrait (10 slots):** `hero-type` → `caption-band` → `feature-stack`
+→ `editorial-card` → `vertical-bento` → `dual-phone` → `tilted-card` →
+`caption-band` → `headline-masthead` → `hero-type` (CTA).
 
-**Phone landscape (3 slots):** Hero (LL-01) → Caption (LL-02) → Stat Strip (LL-04).
+**Landscape (3 slots):** `landscape-hero` → `landscape-split` →
+`landscape-text-only`.
 
-**Tablet portrait (10 slots):** TP-01 → TP-02 → TP-05 → TP-03 → TP-04 →
-TP-02 → TP-03 → TP-04 → TP-05 → TP-01 (CTA).
-
-**Tablet landscape (3 slots):** TL-01 → TL-02 or TL-03 → TL-04.
-
-### 11.6 Quick decision flowchart
+### 11.5 Quick decision flowchart
 
 ```
 1. What orientation are the source screenshots?
-   → portrait → use portrait file
-   → landscape → use landscape file
-2. Phone or tablet?
-   → pick the matching of the 4 files
-3. Which slot?
-   → §11.5 above gives the recommended layout
-4. Need a visual reference?
-   → only then, open design/layouts-<class>-<orient>-shots.html
+   → portrait → portrait layouts
+   → landscape → landscape-* layouts
+2. Which slot?
+   → §11.4 above gives the recommended layout
+3. Need a visual reference?
+   → open design/index.html (rebuild via `npx tsx design/build-preview.ts`)
 ```
 
-This flow saves loading ~600 lines of HTML for routine work. Open the
-HTML only when you need to see the actual composition (e.g., debugging a
-visual issue or designing a new variant).
+Open the atlas for QA / new-variant design — not for routine
+spec-authoring decisions.
 
 ---
 

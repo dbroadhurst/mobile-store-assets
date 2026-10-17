@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>mobile-store-assets · layout atlas</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+  :root {
+    --ink: #1a2330;
+    --ink-2: #4b5566;
+    --line: #e2e6ee;
+    --bg: #f6f7fb;
+    --accent: #5c6bff;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); }
+  body { font: 15px/1.55 -apple-system, "SF Pro Text", "Inter", system-ui, sans-serif; }
+
+  header { padding: 36px 40px 20px; background: #fff; border-bottom: 1px solid var(--line); }
+  header h1 { margin: 0 0 4px; font-size: 22px; letter-spacing: -0.01em; }
+  header .meta { color: var(--ink-2); font-size: 13px; }
+  header code { background: #eef1f8; padding: 1px 6px; border-radius: 3px; font-size: 12px; }
+
+  main {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+    gap: 28px;
+    padding: 28px 40px 64px;
+  }
+
+  .card {
+    margin: 0;
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .frame {
+    background: #f2f3f8;
+    padding: 22px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 420px;
+  }
+  .frame img {
+    max-width: 100%;
+    max-height: 640px;
+    height: auto;
+    border-radius: 6px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.10);
+  }
+  figcaption { padding: 16px 18px 20px; }
+  figcaption h3 { margin: 0 0 4px; font-size: 16px; font-weight: 700; letter-spacing: -0.01em; }
+  .meta { margin: 0 0 8px; font-size: 12px; color: var(--accent); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+  .desc { margin: 0; font-size: 13px; color: var(--ink-2); line-height: 1.5; }
+
+  .note {
+    background: #fffbe9;
+    border-top: 1px solid var(--line);
+    padding: 14px 40px;
+    font-size: 13px;
+    color: #6b5a14;
+  }
+</style>
+</head>
+<body>
+  <header>
+    <h1>mobile-store-assets · layout atlas</h1>
+    <p class="meta">
+      WYSIWYG preview of every layout the pipeline ships. Each image is rendered by the
+      <em>same</em> JSX template the CLI uses — no separate mock content.
+      Regenerate with <code>npx tsx design/build-preview.ts</code>. Last built: 2026-05-18 18:43.
+    </p>
+  </header>
+  <main>
+    
+    <figure class="card">
+      <div class="frame">
+        <img src="preview/hero-type.png" loading="lazy" alt="hero-type" />
+      </div>
+      <figcaption>
+        <h3>hero-type</h3>
+        <p class="meta">1320×2868 · 1346 ms</p>
+        <p class="desc">Icon + benefit headline panel + chip row. No phone.</p>
+      </figcaption>
+    </figure>
+    <figure class="card">
+      <div class="frame">
+        <img src="preview/feature-stack.png" loading="lazy" alt="feature-stack" />
+      </div>
+      <figcaption>
+        <h3>feature-stack</h3>
+        <p class="meta">1320×2868 · 975 ms</p>
+        <p class="desc">4 numbered feature rows + footer chip. No phone.</p>
+      </figcaption>
+    </figure>
+    <figure class="card">
+      <div class="frame">
+        <img src="preview/caption-band.png" loading="lazy" alt="caption-band" />
+      </div>
+      <figcaption>
+        <h3>caption-band</h3>
+        <p class="meta">1320×2868 · 923 ms</p>
+        <p class="desc">Phone hero + full-width soft-band caption.</p>
+      </figcaption>
+    </figure>
+    <figure class="card">
+      <div class="frame">
+        <img src="preview/caption-band-tablet.png" loading="lazy" alt="caption-band · tablet" />
+      </div>
+      <figcaption>
+        <h3>caption-band · tablet</h3>
+        <p class="meta">2064×2752 · 943 ms</p>
+        <p class="desc">Same template on iPad — the slot adopts tablet aspect.</p>
+      </figcaption>
+    </figure>
+    <figure class="card">
+      <div class="frame">
+        <img src="preview/headline-masthead.png" loading="lazy" alt="headline-masthead" />
+      </div>
+      <figcaption>
+        <h3>headline-masthead</h3>
+        <p class="meta">1320×2868 · 873 ms</p>
+        <p class="desc">Top eyebrow chip + headline panel, phone fills the bottom.</p>
+      </figcaption>
+    </figure>
+    <figure class="card">
+      <div class="frame">
+        <img src="preview/editorial-card.png" loading="lazy" alt="editorial-card" />
+      </div>
+      <figcaption>
+        <h3>editorial-card</h3>
+        <p class="meta">1320×2868 · 856 ms</p>
+        <p class="desc">Tilted phone clipping the top + bottom-left panel + accent rule.</p>
+      </figcaption>
+    </figure>
+    <figure class="card">
+      <div class="frame">
+        <img src="preview/tilted-card.png" loading="lazy" alt="tilted-card" />
+      </div>
+      <figcaption>
+        <h3>tilted-card</h3>
+        <p class="meta">1320×2868 · 887 ms</p>
+        <p class="desc">Phone inside a tilted white floating card + bottom panel.</p>
+      </figcaption>
+    </figure>
+    <figure class="card">
+      <div class="frame">
+        <img src="preview/vertical-bento.png" loading="lazy" alt="vertical-bento" />
+      </div>
+      <figcaption>
+        <h3>vertical-bento</h3>
+        <p class="meta">1320×2868 · 867 ms</p>
+        <p class="desc">Headline strip + phone tile + two stat tiles.</p>
+      </figcaption>
+    </figure>
+    <figure class="card">
+      <div class="frame">
+        <img src="preview/dual-phone.png" loading="lazy" alt="dual-phone" />
+      </div>
+      <figcaption>
+        <h3>dual-phone</h3>
+        <p class="meta">1320×2868 · 905 ms</p>
+        <p class="desc">Two phones tilted toward each other + headline + chips.</p>
+      </figcaption>
+    </figure>
+    <figure class="card">
+      <div class="frame">
+        <img src="preview/landscape-split.png" loading="lazy" alt="landscape-split" />
+      </div>
+      <figcaption>
+        <h3>landscape-split</h3>
+        <p class="meta">2868×1320 · 865 ms</p>
+        <p class="desc">Top text band + bottom phone band (landscape canvas).</p>
+      </figcaption>
+    </figure>
+    <figure class="card">
+      <div class="frame">
+        <img src="preview/landscape-hero.png" loading="lazy" alt="landscape-hero" />
+      </div>
+      <figcaption>
+        <h3>landscape-hero</h3>
+        <p class="meta">2868×1320 · 848 ms</p>
+        <p class="desc">Centred uppercase headline + large centred phone.</p>
+      </figcaption>
+    </figure>
+    <figure class="card">
+      <div class="frame">
+        <img src="preview/landscape-text-only.png" loading="lazy" alt="landscape-text-only" />
+      </div>
+      <figcaption>
+        <h3>landscape-text-only</h3>
+        <p class="meta">2868×1320 · 908 ms</p>
+        <p class="desc">Icon left + headline/subhead right. No phone.</p>
+      </figcaption>
+    </figure>
+    <figure class="card">
+      <div class="frame">
+        <img src="preview/wear-os.png" loading="lazy" alt="wear-os" />
+      </div>
+      <figcaption>
+        <h3>wear-os</h3>
+        <p class="meta">384×384 · 763 ms</p>
+        <p class="desc">Watch face — icon + first headline word at 384×384.</p>
+      </figcaption>
+    </figure>
+    <figure class="card">
+      <div class="frame">
+        <img src="preview/tv-banner.png" loading="lazy" alt="tv-banner" />
+      </div>
+      <figcaption>
+        <h3>tv-banner</h3>
+        <p class="meta">1280×720 · 794 ms</p>
+        <p class="desc">Android TV listing banner — icon + app name + tagline at 1280×720.</p>
+      </figcaption>
+    </figure>
+    <figure class="card">
+      <div class="frame">
+        <img src="preview/feature-graphic-banner-bottom.png" loading="lazy" alt="feature-graphic · banner-bottom" />
+      </div>
+      <figcaption>
+        <h3>feature-graphic · banner-bottom</h3>
+        <p class="meta">1024×500 · 796 ms</p>
+        <p class="desc">Google Play 1024×500 banner. Rotated per matrix set.</p>
+      </figcaption>
+    </figure>
+    <figure class="card">
+      <div class="frame">
+        <img src="preview/feature-graphic-hero-right.png" loading="lazy" alt="feature-graphic · hero-right" />
+      </div>
+      <figcaption>
+        <h3>feature-graphic · hero-right</h3>
+        <p class="meta">1024×500 · 778 ms</p>
+        <p class="desc">Google Play 1024×500 banner. Rotated per matrix set.</p>
+      </figcaption>
+    </figure>
+    <figure class="card">
+      <div class="frame">
+        <img src="preview/feature-graphic-cluster-left.png" loading="lazy" alt="feature-graphic · cluster-left" />
+      </div>
+      <figcaption>
+        <h3>feature-graphic · cluster-left</h3>
+        <p class="meta">1024×500 · 781 ms</p>
+        <p class="desc">Google Play 1024×500 banner. Rotated per matrix set.</p>
+      </figcaption>
+    </figure>
+  </main>
+  <p class="note">
+    These PNGs are committed for fast browser previews. They are stale the moment a layout
+    file changes — rebuild after edits so the atlas keeps matching the renderer.
+  </p>
+</body>
+</html>

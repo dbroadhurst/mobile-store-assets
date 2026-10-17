@@ -549,46 +549,40 @@ real-world use. Read it before authoring; don't re-litigate these.
   the top and bottom for headline text overlay, visual interest
   concentrated in the centre".
 
-### Visual hierarchy fixes applied during production review
+### Layout implementation — what's authoritative
 
-- **App-name wordmarks removed** from every layout (`uppercase-top`,
-  `caption-below`, `logo-tilted`, `card-tilted`). The store already shows
-  the app name next to every screenshot — repeating it is wasted pixels.
-- **Subhead sizes bumped**: `uppercase-top` 0.040 → 0.050; `caption-below`
-  factor 0.55 → 0.62; `logo-tilted` 0.045 → 0.050; `highlight-pill` /
-  `side-list` / `dual-phone-overlap` 0.040 → 0.048; with comfortable gap
-  (H × 0.038) between headline and subhead.
-- **Subheads always wrap and `fitText`** so long copy never clips the
-  canvas edge.
-- **Headline `charRatio` 0.68** for ALL-CAPS bold layouts (was 0.62 — too
-  optimistic for wide bold caps).
-- **Side-list subhead** anchors to `max(phone-bottom, list-bottom) + gap`,
-  not absolute `H × 0.95`.
-- **Card-tilted** auto-sizes the card to content height (was fixed
-  `H × 0.34` with huge negative space). Trust badge only renders when
-  `badge_count` is explicitly authored.
-- **Highlight-pill / dual-phone-overlap**: bracketed `[KEYWORDS]` render
-  as bold accent-coloured text, **no background pill** (the coloured
-  block was too heavy).
-- **Adaptive text colour**: `pickTextColorsForGradient()` in `colors.ts`
-  computes WCAG luminance on the gradient midpoint and chooses
-  white-on-dark or dark-on-light per theme. `ensureAccentContrast()`
-  iteratively adjusts the accent until 4.5:1 against the background.
-- **Text-shadow halo**: every overlay SVG includes a `<style>` block
-  applying `paint-order: stroke fill; stroke: rgba(0,0,0,0.45)` so each
-  glyph has a subtle dark halo. Insurance for borderline contrast cases.
-- **Device frame slimmed**: bezel ~1.8% of phone width (was 4%). Always
-  shown — `frame: 'none'` no longer produces a frameless render. Camera
-  pill smaller and darker for a marketing-mockup feel.
-- **Feature graphic** now includes the app icon (62% of canvas height,
-  rounded square) on the left, app name + subtitle on the right. No
-  scrim — the theme background carries contrast on its own.
-- **Text-hero**: icon centred at top, `W * 0.24` (was 0.18). Star/review-
-  count badge removed. Optional honest "feature pill" row only renders
-  when `screenshot.features` is populated.
-- **Dual-phone variety**: the planner auto-pairs a sibling screenshot's
-  source for the secondary phone when `sources_secondary` isn't authored
-  — two duplicate phones don't read as variety.
+Layouts are JSX templates rendered with Playwright (one file per layout in
+`src/layouts/`). Each template uses Tailwind tokens and container-query
+units so the same source covers iPhone → iPad → Android without
+per-platform branching. There is no `fitText` / `charRatio` text-fit math
+anymore — CSS handles wrapping (`text-wrap: balance`, `clamp()` font
+sizes) and the post-render contrast gate audits the actual rendered
+pixels with WCAG ratios.
+
+**Source of truth for what a layout looks like**: open `design/index.html`
+in a browser. It shows every layout rendered at a representative canvas
+size with stock content. Regenerate after layout edits with
+`npx tsx design/build-preview.ts`.
+
+**Conventions still relevant to spec authoring**:
+- App-name wordmarks aren't repeated inside images (the store shows it
+  beside every screenshot — duplication wastes pixels).
+- `[BRACKETED]` keywords in a headline render in the theme's accent
+  colour (used by `hero-type` and `editorial-card`); other layouts strip
+  the brackets and render plain text.
+- `badge_label` + `badge_count` populate eyebrow chips
+  (`headline-masthead`, `editorial-card`) or footer chips
+  (`feature-stack`). Only render when explicitly authored.
+- `features[]` formats per layout:
+  - `hero-type`: 2–4 short chip labels (e.g. `["Daily", "Curated", "Free"]`)
+  - `feature-stack`: `"Label — body text"` per entry (em/en/hyphen splits)
+  - `vertical-bento`: `"LABEL|NUMBER|caption"` per entry (pipe-separated)
+- `dual-phone`: when `sources_secondary` isn't authored, the dispatcher
+  auto-pairs a sibling screenshot's source so the two phones aren't
+  duplicates.
+- `screenshotAspectRatio` is read from each source automatically — phone
+  shots produce a phone-shaped slot, tablet shots produce a tablet-shaped
+  slot, on any canvas.
 
 ### Content honesty (hard line, recap)
 

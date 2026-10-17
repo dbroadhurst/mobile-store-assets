@@ -353,4 +353,24 @@ export interface LayoutInput {
   targetWidth: number;
   targetHeight: number;
   projectRoot: string;                      // for resolving icon paths from config.app.icon
+  /**
+   * Retry-driven scrim intensifier (0–~0.30). The dispatcher's
+   * `renderLayoutWithRetry` bumps this on each retry attempt so the rendered
+   * panels darken until the contrast gate passes. Forwarded to
+   * `renderAndCapture` → `--scrim-boost` CSS var. Default 0.
+   */
+  scrimBoost?: number;
+  /**
+   * Primary screenshot's natural h/w aspect ratio (e.g. 19.5/9 ≈ 2.166 for
+   * an iPhone shot, 4/3 ≈ 1.333 for an iPad shot). Layouts use this to size
+   * their phone/tablet display slot so the source isn't stretched or
+   * cropped into the wrong shape — a tablet canvas with a tablet source
+   * should show a tablet-shaped slot, not a tall phone-shaped one.
+   *
+   * Defaults to `19.5 / 9` (iPhone) when omitted, preserving prior behaviour
+   * for legacy specs that didn't supply per-platform sources.
+   */
+  screenshotAspectRatio?: number;
+  /** Same as `screenshotAspectRatio` but for the optional secondary source. */
+  screenshotAspectRatioSecondary?: number;
 }

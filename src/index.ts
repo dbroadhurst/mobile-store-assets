@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import { fileURLToPath } from 'url';
 import yaml from 'js-yaml';
 import sharp from 'sharp';
@@ -26,28 +27,32 @@ import {
   type Provider,
   type OpenAIQuality,
 } from './gemini.js';
-import { resizeBg, escapeXml, fitText, fitWrapped, screenshotAspect, makeDeviceFrame, stripBrackets, TEXT_SHADOW_DEFS } from './helpers.js';
+import { stripBrackets, screenshotAspect } from './helpers.js';
 import { layoutForSet } from './story-arc.js';
-import { wearOs } from './layouts/wear-os.js';
-import { tvBanner } from './layouts/tv-banner.js';
-import { landscapeSplit } from './layouts/landscape-split.js';
-import { landscapeHero } from './layouts/landscape-hero.js';
-import { landscapeTextOnly } from './layouts/landscape-text-only.js';
-// Container-first portrait layouts. See SKILL.md §10–11 and design/layouts-*.html.
-import { heroType } from './layouts/hero-type.js';
-import { captionBand } from './layouts/caption-band.js';
-import { headlineMasthead } from './layouts/headline-masthead.js';
-import { editorialCard } from './layouts/editorial-card.js';
-import { verticalBento } from './layouts/vertical-bento.js';
-import { featureStack } from './layouts/feature-stack.js';
-import { dualPhone } from './layouts/dual-phone.js';
-import { tiltedCard } from './layouts/tilted-card.js';
 import { BackgroundCache } from './cache.js';
 import { writeStoreListings } from './listing.js';
 import { extractTheme } from './colors.js';
 import { renderBackground } from './backgrounds.js';
 import { resolveSets, resolveScreenshot, parseSetsArg } from './matrix.js';
 import { writeReviewFiles, type ManifestItem } from './review.js';
+// Every layout is a JSX template rendered with Playwright. See
+// `src/layouts/` for the canonical set; `design/index.html` is the WYSIWYG
+// atlas of what each one produces.
+import { captionBand } from './layouts/caption-band.js';
+import { heroType } from './layouts/hero-type.js';
+import { headlineMasthead } from './layouts/headline-masthead.js';
+import { featureStack } from './layouts/feature-stack.js';
+import { editorialCard } from './layouts/editorial-card.js';
+import { tiltedCard } from './layouts/tilted-card.js';
+import { verticalBento } from './layouts/vertical-bento.js';
+import { dualPhone } from './layouts/dual-phone.js';
+import { landscapeSplit } from './layouts/landscape-split.js';
+import { landscapeHero } from './layouts/landscape-hero.js';
+import { landscapeTextOnly } from './layouts/landscape-text-only.js';
+import { wearOs } from './layouts/wear-os.js';
+import { tvBanner } from './layouts/tv-banner.js';
+import { featureGraphic, FEATURE_GRAPHIC_VARIANTS } from './layouts/feature-graphic.js';
+import { shutdownBrowser } from './render/browser.js';
 
 // ─── Bootstrap ────────────────────────────────────────────────────────────────
 
@@ -155,24 +160,26 @@ function loadYaml<T>(p: string): T {
 }
 
 function pickProvider(
-  envPath: string,
+  envPaths: string[],
   override?: ProviderId,
   fromConfig?: ProviderId,
 ): { provider: Provider; apiKey: string } | null {
-  let raw: string;
-  try { raw = fs.readFileSync(envPath, 'utf8'); } catch { return null; }
-
+  // Earlier files win: a project's own key overrides the per-user one.
   const keys: Record<ProviderId, string | null> = { openai: null, google: null };
-  for (const line of raw.split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) continue;
-    const eq = trimmed.indexOf('=');
-    if (eq === -1) continue;
-    const k = trimmed.slice(0, eq).trim();
-    const v = trimmed.slice(eq + 1).replace(/^["']|["']$/g, '').trim();
-    if (!v) continue;
-    if (k === 'OPENAI_API_KEY')    keys.openai = v;
-    if (k === 'GOOGLE_AI_API_KEY') keys.google = v;
+  for (const envPath of [...envPaths].reverse()) {
+    let raw: string;
+    try { raw = fs.readFileSync(envPath, 'utf8'); } catch { continue; }
+    for (const line of raw.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const eq = trimmed.indexOf('=');
+      if (eq === -1) continue;
+      const k = trimmed.slice(0, eq).trim();
+      const v = trimmed.slice(eq + 1).replace(/^["']|["']$/g, '').trim();
+      if (!v) continue;
+      if (k === 'OPENAI_API_KEY')    keys.openai = v;
+      if (k === 'GOOGLE_AI_API_KEY') keys.google = v;
+    }
   }
 
   const preferred: ProviderId[] = [];
@@ -235,24 +242,24 @@ async function renderLayout(input: LayoutInput, platform: Platform): Promise<Lay
   // Special-purpose surfaces ignore the spec's `layout` field — Wear OS and
   // the TV banner have fixed compositions because phone-screenshot layouts
   // don't make sense at 1:1 watch size or 16:9 banner.
-  if (platform === 'wear-os')           return normalize(await wearOs(input));
-  if (platform === 'android-tv-banner') return normalize(await tvBanner(input));
+  if (platform === 'wear-os')           return wearOs(input);
+  if (platform === 'android-tv-banner') return tvBanner(input);
 
   switch (canonicalLayout(input.screenshot.layout)) {
     // Portrait
-    case 'hero-type':           return normalize(await heroType(input));
-    case 'caption-band':        return normalize(await captionBand(input));
-    case 'headline-masthead':   return normalize(await headlineMasthead(input));
-    case 'editorial-card':      return normalize(await editorialCard(input));
-    case 'vertical-bento':      return normalize(await verticalBento(input));
-    case 'feature-stack':       return normalize(await featureStack(input));
-    case 'dual-phone':          return normalize(await dualPhone(input));
-    case 'tilted-card':         return normalize(await tiltedCard(input));
+    case 'hero-type':           return heroType(input);
+    case 'caption-band':        return captionBand(input);
+    case 'headline-masthead':   return headlineMasthead(input);
+    case 'editorial-card':      return editorialCard(input);
+    case 'vertical-bento':      return verticalBento(input);
+    case 'feature-stack':       return featureStack(input);
+    case 'dual-phone':          return dualPhone(input);
+    case 'tilted-card':         return tiltedCard(input);
     // Landscape
-    case 'landscape-split':     return normalize(await landscapeSplit(input));
-    case 'landscape-hero':      return normalize(await landscapeHero(input));
-    case 'landscape-text-only': return normalize(await landscapeTextOnly(input));
-    default:                    return normalize(await heroType(input));
+    case 'landscape-split':     return landscapeSplit(input);
+    case 'landscape-hero':      return landscapeHero(input);
+    case 'landscape-text-only': return landscapeTextOnly(input);
+    default:                    return heroType(input);
   }
 }
 
@@ -278,21 +285,23 @@ async function renderLayoutWithRetry(
   }
   for (let attempt = 1; attempt <= MAX_GATE_RETRIES; attempt++) {
     if (lastGate.contrast.length === 0) break;
-    // Bump the contrast boost via env var that containers.ts reads — simpler
-    // than threading it through the input. Each retry adds 1.0 to the target.
-    process.env.CONTRAST_BOOST = String(attempt * 1.0);
-    lastResult = await renderLayout(input, platform);
+    // Bump the panel scrim on each retry. scrimBoost rides through to the
+    // `--scrim-boost` CSS var (see src/render/html-shell.tsx); layouts add
+    // it directly to their panel `rgba(...)` alphas. Scale 0.15, 0.30 — caps
+    // before fully obliterating the bg pixels (base panel alphas are 0.55–
+    // 0.78, so final stops around 0.93–1.08).
+    //
+    // NOTE on calibration: validateZones samples pixels inside the text bbox,
+    // which includes the rendered glyph pixels themselves. For white text
+    // this biases the measured "bg" luminance toward white, under-reporting
+    // contrast. The boost still increases real contrast monotonically; the
+    // measurement is conservative. Future improvement: sample a frame around
+    // the glyphs instead of through them.
+    const boostedInput: LayoutInput = { ...input, scrimBoost: attempt * 0.15 };
+    lastResult = await renderLayout(boostedInput, platform);
     lastGate = await validateZones(lastResult.buffer, lastResult.zones, canvasWidth, canvasHeight);
-    delete process.env.CONTRAST_BOOST;
   }
   return { result: lastResult, gate: lastGate, attempts: 1 + MAX_GATE_RETRIES };
-}
-
-// Adapter that accepts either the legacy Buffer return or the new LayoutResult.
-// Layouts migrate to LayoutResult one at a time; legacy ones are gate-exempt
-// (zones: []) until they're updated.
-function normalize(r: Buffer | LayoutResult): LayoutResult {
-  return Buffer.isBuffer(r) ? { buffer: r, zones: [] } : r;
 }
 
 // ─── Source resolution ────────────────────────────────────────────────────────
@@ -527,13 +536,12 @@ async function buildFeatureGraphic(
   console.log('  Generating feature graphic...');
 
   // Reuse the landscape background generated for this theme.
-  const bgRaw = await acquireBackground({
+  const bg = await acquireBackground({
     args, cache, set, theme,
     orientation: 'landscape',
     provider, model, apiKey, quality,
     appContext, bucket,
   });
-  const bg = await resizeBg(bgRaw, width, height);
 
   // ── Best-practice rules baked into the layout ──────────────────────────────
   // • Benefit-led headline (5–8 words) from screenshots[0] — never the app
@@ -590,377 +598,36 @@ async function buildFeatureGraphic(
     .map(resolvePhonePath)
     .filter((p): p is string => p !== null);
 
-  // ── Adaptive panel scrim ──────────────────────────────────────────────────
-  // Picks fill colour based on the theme's headline colour: white-on-light or
-  // dark-on-dark are unreadable, so we invert. The 0.55–0.65 opacity range
-  // keeps the bg motifs visible at the panel edges.
-  const lightText = isLightHex(theme.headline_color);
-  const scrimFill = lightText ? '#0A0A0F' : '#FFFFFF';
-  const scrimOp   = lightText ? 0.58 : 0.72;
-
   // ── Variant dispatch ──────────────────────────────────────────────────────
-  // 3 variants rotated by setIndex so the matrix has visual variety.
-  const variants = ['banner-bottom', 'hero-right', 'cluster-left'] as const;
-  const variant = variants[setIndex % variants.length];
+  // 3 variants rotated by setIndex so the matrix has visual variety. The
+  // adaptive scrim (dark-on-light-text or light-on-dark-text) lives inside the
+  // layout itself; see src/layouts/feature-graphic.tsx.
+  const variant = FEATURE_GRAPHIC_VARIANTS[setIndex % FEATURE_GRAPHIC_VARIANTS.length];
 
-  const composites: sharp.OverlayOptions[] = [];
-
-  // Bold-font-safe charRatio (covers Arial-Bold's wider glyphs).
-  const HEAD_CHAR_RATIO = 0.68;
-  const SUB_CHAR_RATIO  = 0.56;
-  const HEAD_LH = 1.08;
-  const SUB_LH  = 1.30;
-
-  let overlay = '';
-
-  if (variant === 'banner-bottom') {
-    // Three phones fanned across the upper 70% of canvas, slightly clipping
-    // the top edge. A solid banner fills the bottom 32% with centred text.
-    const bandTop = Math.floor(height * 0.68);          // where the banner starts
-    const phoneAreaH = bandTop;                          // phones live above the banner
-    const phoneCount = Math.min(phonePaths.length, 3);
-
-    if (phoneCount > 0) {
-      // Make phones slightly taller than the phone area so the top clips —
-      // user wants more presence.
-      const baseH = Math.floor(phoneAreaH * 1.12);
-      for (let i = 0; i < phoneCount; i++) {
-        const aspect = await screenshotAspect(phonePaths[i]);
-        const sizeScale = phoneCount === 1 ? 1
-                        : (i === Math.floor(phoneCount / 2) ? 1 : 0.90);
-        const phoneH = Math.floor(baseH * sizeScale);
-        const tilts = phoneCount === 1 ? [-6]
-                    : phoneCount === 2 ? [-8, 8]
-                    : [-9, 0, 9];
-        const phone = await buildPhoneFrame(phonePaths[i], phoneH, aspect, tilts[i]);
-        const slotCx = phoneCount === 1
-          ? width / 2
-          : (width * (i + 0.5)) / phoneCount;
-        const verticalOffset = (i === Math.floor(phoneCount / 2)) ? 0 : Math.floor(height * 0.025);
-        // Bias upward so the bottom sits roughly at the banner edge with a small overlap.
-        const phoneTop = Math.round(bandTop - phone.h + Math.floor(height * 0.08) + verticalOffset);
-        const phoneLeft = Math.round(slotCx - phone.w / 2);
-        const clipped = await clipToCanvas(phone.buf, phone.w, phone.h, phoneTop, phoneLeft, width, height);
-        if (clipped) composites.push(clipped);
-      }
-    }
-
-    // Banner: full-width semi-opaque scrim at the bottom. Sized to fit the
-    // text. fitWrapped guarantees the headline+subline together fit the
-    // available vertical budget — no more vertical clipping.
-    const bannerH = height - bandTop;
-    const padX = Math.floor(width * 0.06);
-    const padY = Math.floor(bannerH * 0.16);
-    const textSafe = width - padX * 2;
-    const headHeightBudget = subline
-      ? Math.floor((bannerH - padY * 2) * 0.62)    // 62% for headline, leaves room for subline + gap
-      : (bannerH - padY * 2);
-    const head = fitWrapped(headline, textSafe, headHeightBudget,
-      Math.floor(bannerH * 0.42), HEAD_CHAR_RATIO, HEAD_LH, { maxLines: 2 });
-    const headLineH = Math.floor(head.size * HEAD_LH);
-    const totalHeadH = head.lines.length * headLineH;
-    const gap = Math.floor(bannerH * 0.08);
-    const subBudget = subline ? Math.max(0, bannerH - padY * 2 - totalHeadH - gap) : 0;
-    const sub = subline
-      ? fitWrapped(subline, textSafe, subBudget,
-          Math.floor(bannerH * 0.20), SUB_CHAR_RATIO, SUB_LH, { maxLines: 2, minSize: 18 })
-      : { lines: [] as string[], size: 0 };
-    const subLineH = sub.size ? Math.floor(sub.size * SUB_LH) : 0;
-    const totalSubH = sub.lines.length * subLineH;
-    const totalTextH = totalHeadH + (sub.lines.length ? gap + totalSubH : 0);
-    const textTop = bandTop + Math.floor((bannerH - totalTextH) / 2);
-    const cx = width / 2;
-
-    overlay = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
-      ${TEXT_SHADOW_DEFS}
-      <defs>
-        <linearGradient id="bannerFade" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%"  stop-color="${scrimFill}" stop-opacity="0"/>
-          <stop offset="35%" stop-color="${scrimFill}" stop-opacity="${scrimOp}"/>
-          <stop offset="100%" stop-color="${scrimFill}" stop-opacity="${scrimOp}"/>
-        </linearGradient>
-      </defs>
-      <rect x="0" y="${bandTop - Math.floor(bannerH * 0.20)}" width="${width}" height="${bannerH + Math.floor(bannerH * 0.20)}" fill="url(#bannerFade)"/>
-      ${head.lines.map((line, i) =>
-        `<text x="${cx}" y="${textTop + (i + 1) * headLineH - Math.floor(headLineH * 0.20)}" text-anchor="middle"
-          font-family="Arial,Helvetica,sans-serif" font-size="${head.size}" font-weight="800"
-          fill="${theme.headline_color}">${escapeXml(line)}</text>`
-      ).join('\n')}
-      ${sub.lines.map((line, i) =>
-        `<text x="${cx}" y="${textTop + totalHeadH + gap + (i + 1) * subLineH - Math.floor(subLineH * 0.20)}" text-anchor="middle"
-          font-family="Arial,Helvetica,sans-serif" font-size="${sub.size}" font-weight="400"
-          fill="${theme.subheadline_color}">${escapeXml(line)}</text>`
-      ).join('\n')}
-    </svg>`;
-
-  } else if (variant === 'hero-right') {
-    // One large hero phone right-of-centre, slightly clipping the top/bottom.
-    // Two smaller phones flank it for depth. Text panel on the left half.
-    const heroH = Math.floor(height * 1.10);            // 110% of canvas → top + bottom clip
-    const phoneCount = Math.min(phonePaths.length, 3);
-
-    if (phoneCount > 0) {
-      // Hero is the FIRST (value slot) screenshot, placed centre-right.
-      const heroAspect = await screenshotAspect(phonePaths[0]);
-      const hero = await buildPhoneFrame(phonePaths[0], heroH, heroAspect, -4);
-      const heroCx = Math.floor(width * 0.74);
-      const heroClip = await clipToCanvas(
-        hero.buf, hero.w, hero.h,
-        Math.round((height - hero.h) / 2),
-        Math.round(heroCx - hero.w / 2),
-        width, height,
-      );
-      // Flanking phones, smaller and tilted further, behind the hero. Use
-      // remaining screenshots (limited to 2 more). Composited BEFORE the hero
-      // so they appear behind it.
-      const flankInfo = [
-        { sourceIdx: 1, cxFrac: 0.92, tilt: 12, scale: 0.78 },
-        { sourceIdx: 2, cxFrac: 0.60, tilt: -10, scale: 0.72 },
-      ];
-      for (const fl of flankInfo) {
-        if (fl.sourceIdx >= phoneCount) continue;
-        const aspect = await screenshotAspect(phonePaths[fl.sourceIdx]);
-        const ph = Math.floor(heroH * fl.scale);
-        const phone = await buildPhoneFrame(phonePaths[fl.sourceIdx], ph, aspect, fl.tilt);
-        const cClip = await clipToCanvas(
-          phone.buf, phone.w, phone.h,
-          Math.round((height - phone.h) / 2 + Math.floor(height * 0.05)),
-          Math.round(width * fl.cxFrac - phone.w / 2),
-          width, height,
-        );
-        if (cClip) composites.push(cClip);
-      }
-      // Hero on top.
-      if (heroClip) composites.push(heroClip);
-    }
-
-    // Left text panel. The panel sizes itself to the content (height grows
-    // with the wrapped headline); fitWrapped picks the largest font where
-    // both width and height fit within reasonable bounds.
-    const padX = Math.floor(width * 0.03);
-    const padY = Math.floor(height * 0.06);
-    const panelW = Math.floor(width * 0.48);
-    const textSafe = panelW - padX * 2;
-    // Headline can use up to ~62% of the canvas vertically inside the panel
-    // (panel grows to fit). Allow up to 3 lines for better thumbnail size.
-    const head = fitWrapped(headline, textSafe, Math.floor(height * 0.62),
-      Math.floor(height * 0.22), HEAD_CHAR_RATIO, HEAD_LH, { maxLines: 3 });
-    const headLineH = Math.floor(head.size * HEAD_LH);
-    const totalHeadH = head.lines.length * headLineH;
-    const gap = Math.floor(height * 0.035);
-    const sub = subline
-      ? fitWrapped(subline, textSafe, Math.floor(height * 0.20),
-          Math.floor(height * 0.09), SUB_CHAR_RATIO, SUB_LH, { maxLines: 2, minSize: 18 })
-      : { lines: [] as string[], size: 0 };
-    const subLineH = sub.size ? Math.floor(sub.size * SUB_LH) : 0;
-    const totalSubH = sub.lines.length * subLineH;
-    const totalTextH = totalHeadH + (sub.lines.length ? gap + totalSubH : 0);
-    const panelH = Math.min(height - SAFE * 2, totalTextH + padY * 2);
-    const panelX = SAFE;
-    const panelY = Math.floor((height - panelH) / 2);
-    const panelR = Math.floor(Math.min(panelW, panelH) * 0.08);
-    const textLeft = panelX + padX;
-
-    overlay = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
-      ${TEXT_SHADOW_DEFS}
-      <defs>
-        <filter id="panelShadow" x="-10%" y="-10%" width="120%" height="140%">
-          <feDropShadow dx="0" dy="8" stdDeviation="14" flood-opacity="0.32"/>
-        </filter>
-      </defs>
-      <rect x="${panelX}" y="${panelY}" width="${panelW}" height="${panelH}" rx="${panelR}" ry="${panelR}"
-        fill="${scrimFill}" fill-opacity="${scrimOp}" filter="url(#panelShadow)"/>
-      ${head.lines.map((line, i) =>
-        `<text x="${textLeft}" y="${panelY + padY + (i + 1) * headLineH - Math.floor(headLineH * 0.20)}"
-          font-family="Arial,Helvetica,sans-serif" font-size="${head.size}" font-weight="800"
-          fill="${theme.headline_color}">${escapeXml(line)}</text>`
-      ).join('\n')}
-      ${sub.lines.map((line, i) =>
-        `<text x="${textLeft}" y="${panelY + padY + totalHeadH + gap + (i + 1) * subLineH - Math.floor(subLineH * 0.20)}"
-          font-family="Arial,Helvetica,sans-serif" font-size="${sub.size}" font-weight="400"
-          fill="${theme.subheadline_color}">${escapeXml(line)}</text>`
-      ).join('\n')}
-    </svg>`;
-
-  } else {  // cluster-left
-    // 2 overlapping phones on the left, text panel on the right.
-    const phoneCount = Math.min(phonePaths.length, 2);
-    const baseH = Math.floor(height * 1.06);
-
-    if (phoneCount > 0) {
-      // Front phone (slot 0) sits left-centre, slight tilt.
-      const aspect0 = await screenshotAspect(phonePaths[0]);
-      const front = await buildPhoneFrame(phonePaths[0], baseH, aspect0, -6);
-      const frontCx = Math.floor(width * 0.22);
-      const frontClip = await clipToCanvas(
-        front.buf, front.w, front.h,
-        Math.round((height - front.h) / 2),
-        Math.round(frontCx - front.w / 2),
-        width, height,
-      );
-      if (phoneCount > 1) {
-        // Back phone behind + offset, tilted opposite (compose first so it
-        // sits behind the front phone).
-        const aspect1 = await screenshotAspect(phonePaths[1]);
-        const backH = Math.floor(baseH * 0.86);
-        const back  = await buildPhoneFrame(phonePaths[1], backH, aspect1, 8);
-        const backCx = Math.floor(width * 0.36);
-        const backClip = await clipToCanvas(
-          back.buf, back.w, back.h,
-          Math.round((height - back.h) / 2 + Math.floor(height * 0.03)),
-          Math.round(backCx - back.w / 2),
-          width, height,
-        );
-        if (backClip) composites.push(backClip);
-      }
-      if (frontClip) composites.push(frontClip);
-    }
-
-    // Right text panel — same fitting model as hero-right.
-    const padX = Math.floor(width * 0.03);
-    const padY = Math.floor(height * 0.06);
-    const panelW = Math.floor(width * 0.48);
-    const textSafe = panelW - padX * 2;
-    const head = fitWrapped(headline, textSafe, Math.floor(height * 0.62),
-      Math.floor(height * 0.22), HEAD_CHAR_RATIO, HEAD_LH, { maxLines: 3 });
-    const headLineH = Math.floor(head.size * HEAD_LH);
-    const totalHeadH = head.lines.length * headLineH;
-    const gap = Math.floor(height * 0.035);
-    const sub = subline
-      ? fitWrapped(subline, textSafe, Math.floor(height * 0.20),
-          Math.floor(height * 0.09), SUB_CHAR_RATIO, SUB_LH, { maxLines: 2, minSize: 18 })
-      : { lines: [] as string[], size: 0 };
-    const subLineH = sub.size ? Math.floor(sub.size * SUB_LH) : 0;
-    const totalSubH = sub.lines.length * subLineH;
-    const totalTextH = totalHeadH + (sub.lines.length ? gap + totalSubH : 0);
-    const panelH = Math.min(height - SAFE * 2, totalTextH + padY * 2);
-    const panelX = width - panelW - SAFE;
-    const panelY = Math.floor(height * 0.58 - panelH / 2);  // slightly below centre
-    const panelR = Math.floor(Math.min(panelW, panelH) * 0.08);
-    const textLeft = panelX + padX;
-
-    overlay = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
-      ${TEXT_SHADOW_DEFS}
-      <defs>
-        <filter id="panelShadow" x="-10%" y="-10%" width="120%" height="140%">
-          <feDropShadow dx="0" dy="8" stdDeviation="14" flood-opacity="0.32"/>
-        </filter>
-      </defs>
-      <rect x="${panelX}" y="${panelY}" width="${panelW}" height="${panelH}" rx="${panelR}" ry="${panelR}"
-        fill="${scrimFill}" fill-opacity="${scrimOp}" filter="url(#panelShadow)"/>
-      ${head.lines.map((line, i) =>
-        `<text x="${textLeft}" y="${panelY + padY + (i + 1) * headLineH - Math.floor(headLineH * 0.20)}"
-          font-family="Arial,Helvetica,sans-serif" font-size="${head.size}" font-weight="800"
-          fill="${theme.headline_color}">${escapeXml(line)}</text>`
-      ).join('\n')}
-      ${sub.lines.map((line, i) =>
-        `<text x="${textLeft}" y="${panelY + padY + totalHeadH + gap + (i + 1) * subLineH - Math.floor(subLineH * 0.20)}"
-          font-family="Arial,Helvetica,sans-serif" font-size="${sub.size}" font-weight="400"
-          fill="${theme.subheadline_color}">${escapeXml(line)}</text>`
-      ).join('\n')}
-    </svg>`;
-  }
-
-  composites.push({ input: Buffer.from(overlay), top: 0, left: 0 });
+  const { buffer: rendered } = await featureGraphic({
+    background: bg,
+    phonePaths,
+    headline,
+    subline,
+    theme,
+    variant,
+    width,
+    height,
+  });
 
   const outPath = path.join(outputDir, 'google-play', 'feature-graphic.png');
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   // Output as 24-bit PNG (no alpha) — Play rejects transparency on this asset.
-  // flatten() blends any transparency into the theme bg; removeAlpha() then
-  // strips the channel byte so the encoded PNG is genuinely 24-bit (sharp's
-  // .png() can otherwise emit a 32-bit PNG with all-opaque alpha, which some
-  // tools — and Play's stricter validator — still flag as "has alpha").
-  await sharp(bg)
-    .composite(composites)
+  // flatten() blends any partially-transparent pixels into the theme bg;
+  // removeAlpha() strips the channel byte so the encoded PNG is genuinely
+  // 24-bit (sharp's .png() can otherwise emit 32-bit with all-opaque alpha,
+  // which Play's stricter validator flags as "has alpha").
+  await sharp(rendered)
     .flatten({ background: theme.bg_from })
     .removeAlpha()
     .png()
     .toFile(outPath);
   console.log(`  ✓  feature-graphic.png (${width}×${height})`);
-}
-
-function isLightHex(hex: string): boolean {
-  // Relative luminance check. > 0.55 = light, panel needs to darken.
-  // Accepts "#rrggbb", "#rgb", or "rgba(...)" (falls through as light).
-  const m = /^#([0-9a-f]{6})$/i.exec(hex);
-  if (!m) {
-    const short = /^#([0-9a-f]{3})$/i.exec(hex);
-    if (!short) return true;
-    const r = parseInt(short[1][0] + short[1][0], 16);
-    const g = parseInt(short[1][1] + short[1][1], 16);
-    const b = parseInt(short[1][2] + short[1][2], 16);
-    return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.55;
-  }
-  const r = parseInt(m[1].substring(0, 2), 16);
-  const g = parseInt(m[1].substring(2, 4), 16);
-  const b = parseInt(m[1].substring(4, 6), 16);
-  return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.55;
-}
-
-// Crop an overlay buffer to the canvas intersection so it can be composited
-// even when the intended (top, left) position would place part of it outside
-// the canvas. Sharp's composite rejects out-of-bounds layers; this helper
-// keeps the "phone clipping the canvas edge" effect achievable.
-async function clipToCanvas(
-  buf: Buffer,
-  bufW: number,
-  bufH: number,
-  top: number,
-  left: number,
-  canvasW: number,
-  canvasH: number,
-): Promise<{ input: Buffer; top: number; left: number } | null> {
-  const x0 = Math.max(left, 0);
-  const y0 = Math.max(top, 0);
-  const x1 = Math.min(left + bufW, canvasW);
-  const y1 = Math.min(top + bufH, canvasH);
-  if (x1 <= x0 || y1 <= y0) return null;       // entirely off-canvas
-  if (x0 === left && y0 === top && x1 === left + bufW && y1 === top + bufH) {
-    return { input: buf, top, left };          // no clip needed
-  }
-  const cropped = await sharp(buf)
-    .extract({ left: x0 - left, top: y0 - top, width: x1 - x0, height: y1 - y0 })
-    .png()
-    .toBuffer();
-  return { input: cropped, top: y0, left: x0 };
-}
-
-// Render a device-framed phone screenshot at 2× then downscale with lanczos3
-// for crisp rotation. Returns the final buffer and its post-rotate dims.
-async function buildPhoneFrame(
-  phonePath: string,
-  phoneH: number,
-  aspect: number,
-  tilt: number,
-): Promise<{ buf: Buffer; w: number; h: number }> {
-  const phoneW = Math.max(40, Math.round(phoneH / aspect));
-  const frame = await makeDeviceFrame(phonePath, phoneW * 2, phoneH * 2, 0, 0, 'top', 'cover');
-  const downsized = await sharp(frame)
-    .resize(phoneW, phoneH, { kernel: sharp.kernel.lanczos3 })
-    .png()
-    .toBuffer();
-  if (tilt === 0) return { buf: downsized, w: phoneW, h: phoneH };
-  const tilted = await sharp(downsized)
-    .rotate(tilt, { background: { r: 0, g: 0, b: 0, alpha: 0 } })
-    .png()
-    .toBuffer();
-  const meta = await sharp(tilted).metadata();
-  return { buf: tilted, w: meta.width ?? phoneW, h: meta.height ?? phoneH };
-}
-
-function wrapByLen(text: string, target: number): string[] {
-  const words = text.split(/\s+/).filter(Boolean);
-  const lines: string[] = [];
-  let cur = '';
-  for (const w of words) {
-    const next = cur ? `${cur} ${w}` : w;
-    if (next.length > target && cur) { lines.push(cur); cur = w; } else { cur = next; }
-  }
-  if (cur) lines.push(cur);
-  return lines;
-}
-function longestLine(lines: string[]): string {
-  return lines.reduce((a, b) => a.length > b.length ? a : b, '');
 }
 
 // ─── Subcommand: extract theme ────────────────────────────────────────────────
@@ -998,8 +665,12 @@ async function main() {
 
   const args = parseArgs();
 
-  const envPath = path.join(args.projectRoot, 'marketing', '.env.local');
-  dotenv.config({ path: envPath });
+  // marketing/.env.local first, then a per-user file shared by all projects.
+  const envPaths = [
+    path.join(args.projectRoot, 'marketing', '.env.local'),
+    path.join(os.homedir(), '.config', 'mobile-store-assets', '.env'),
+  ];
+  dotenv.config({ path: envPaths });
 
   const spec: Spec     = loadYaml(path.join(args.projectRoot, args.specPath));
   const config: StoreConfig = loadYaml(path.join(args.projectRoot, args.configPath));
@@ -1013,9 +684,9 @@ async function main() {
   let useAiBg = false;
 
   if (!args.dryRun) {
-    const detected = pickProvider(envPath, args.providerOverride, config.default_provider);
+    const detected = pickProvider(envPaths, args.providerOverride, config.default_provider);
     if (args.useAiBgFlag && !detected) {
-      console.error('✖  --use-ai-bg requires OPENAI_API_KEY or GOOGLE_AI_API_KEY in marketing/.env.local');
+      console.error('✖  --use-ai-bg requires OPENAI_API_KEY or GOOGLE_AI_API_KEY in marketing/.env.local or ~/.config/mobile-store-assets/.env');
       process.exit(1);
     }
     if (args.cssBgFlag) {
@@ -1113,12 +784,19 @@ async function main() {
 
           const screenshotPath = resolveScreenshotPath(ssDir, ss, platform, resolved.layout);
 
+          // Measure the source screenshot's natural h/w aspect. Used for both
+          // orientation auto-detection (below) AND passed into the layout so
+          // its phone/tablet slot matches the source — phone shots get a
+          // phone-shaped slot, tablet shots get a tablet-shaped slot.
+          const screenshotAspectRatio = screenshotPath
+            ? await screenshotAspect(screenshotPath)
+            : undefined;
+
           // Resolve orientation: explicit spec value wins; otherwise auto-detect
           // from the screenshot's natural aspect (w > h ⇒ landscape).
           let orientation = ss.orientation;
-          if (!orientation && screenshotPath) {
-            const aspect = await screenshotAspect(screenshotPath);
-            orientation = aspect < 1 ? 'landscape' : 'portrait';
+          if (!orientation && screenshotAspectRatio !== undefined) {
+            orientation = screenshotAspectRatio < 1 ? 'landscape' : 'portrait';
           }
           orientation ??= 'portrait';
 
@@ -1172,6 +850,9 @@ async function main() {
               if (fs.existsSync(sp)) screenshotPathSecondary = sp;
             }
           }
+          const screenshotAspectRatioSecondary = screenshotPathSecondary
+            ? await screenshotAspect(screenshotPathSecondary)
+            : undefined;
 
           console.log(`  ${platform} (${W}×${H})...`);
 
@@ -1193,6 +874,8 @@ async function main() {
               background: bgRaw,
               screenshotPath,
               screenshotPathSecondary,
+              screenshotAspectRatio,
+              screenshotAspectRatioSecondary,
               screenshot: {
                 id: ss.id,
                 layout: resolved.layout,
@@ -1344,9 +1027,15 @@ async function main() {
   console.log('');
 }
 
-main().catch(err => {
-  console.error('\n✖  Error:', err.message ?? err);
-  process.exit(1);
-});
+main()
+  .catch(err => {
+    console.error('\n✖  Error:', err.message ?? err);
+    process.exit(1);
+  })
+  .finally(() => {
+    // Close the Playwright browser. Without this the Node process hangs on
+    // the open browser handle. No-op when the browser was never launched.
+    return shutdownBrowser().catch(() => {});
+  });
 
 void __dirname;
